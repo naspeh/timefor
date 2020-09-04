@@ -1,7 +1,5 @@
 package main
 
-// /home/naspeh/.config/tider/log.db
-
 import (
 	"database/sql"
 	"flag"
@@ -18,8 +16,9 @@ const timeoutForProlonging = 600
 func main() {
 	newCmd := flag.NewFlagSet("new", flag.ExitOnError)
 	newShift := newCmd.String("shift", "", "start time shift like 10m, 1h10m, etc.")
-	prolongCmd := flag.NewFlagSet("prolong", flag.ExitOnError)
-	usage := fmt.Sprintf("expected %#v or %#v sub-command", newCmd.Name(), prolongCmd.Name())
+	updateCmd := flag.NewFlagSet("update", flag.ExitOnError)
+	updateFinish := updateCmd.Bool("finish", false, "finish current activity")
+	usage := fmt.Sprintf("expected %#v or %#v sub-command", newCmd.Name(), updateCmd.Name())
 
 	if len(os.Args) < 2 {
 		fmt.Println(usage)
@@ -35,10 +34,10 @@ func main() {
 			os.Exit(1)
 		}
 		fmt.Println(newCmd.Args())
-		NewActivity(newCmd.Args()[0], *newShift)
-	case prolongCmd.Name():
-		_ = prolongCmd.Parse(os.Args[2:])
-		ProlongLastActivity()
+		New(newCmd.Args()[0], *newShift)
+	case updateCmd.Name():
+		_ = updateCmd.Parse(os.Args[2:])
+		Update(*updateFinish)
 	default:
 		fmt.Println(usage)
 		os.Exit(1)
@@ -61,7 +60,6 @@ func connectDb() *sql.DB {
 	default:
 		log.Fatal(err)
 	}
-	fmt.Println(name, db)
 	return db
 }
 
@@ -70,19 +68,34 @@ func initDb(db *sql.DB) {
 		CREATE TABLE log(
 			id INTEGER PRIMARY KEY,
 			name TEXT NOT NULL,
-			start INTEGER NOT NULL,
+			started INTEGER NOT NULL,
 			elapsed INTEGER NOT NULL DEFAULT 0,
-			UNIQUE (name, start)
+			updated INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+			UNIQUE (name, started)
 		);
+
+		CREATE TRIGGER on_insert_started INSERT ON log
+		FOR EACH ROW
+		BEGIN
+			SELECT RAISE(ABORT, 'started must be latest')
+			WHERE NEW.started =< (SELECT MAX(started + elapsed) FROM log);
+		END;
+
+		CREATE TRIGGER on_update_updated UPDATE ON log
+		FOR EACH ROW
+		BEGIN
+			UPDATE log SET updated=strftime('%s', 'now') WHERE id = NEW.id;
+		END;
 
 		CREATE VIEW log_pretty AS
 		SELECT
 			id,
 			name,
-			date(start, 'unixepoch', 'localtime') start_date,
-			time(start, 'unixepoch', 'localtime') start_time,
+			date(started, 'unixepoch', 'localtime') start_date,
+			time(started, 'unixepoch', 'localtime') start_time,
 			elapsed,
-			elapsed / 60 elapsed_minutes
+			elapsed / 60 elapsed_minutes,
+			datetime(updated, 'unixepoch', 'localtime') updated_ts
 		FROM log;
 	`)
 	if err != nil {
@@ -90,7 +103,8 @@ func initDb(db *sql.DB) {
 	}
 }
 
-func NewActivity(name string, shift string) {
+// New activity with name and optional time shift
+func New(name string, shift string) {
 	db := connectDb()
 	defer db.Close()
 
@@ -103,39 +117,40 @@ func NewActivity(name string, shift string) {
 		shiftSeconds = int(shiftDuration.Seconds())
 	}
 	_, err := db.Exec(
-		`INSERT INTO log (name, start, elapsed) VALUES (?, strftime("%s","now") - ?, ?)`,
-		name, shiftSeconds, shiftSeconds,
+		`INSERT INTO log (name, started) VALUES (?, strftime('%s', 'now') - ?)`,
+		name, shiftSeconds,
 	)
 	if err != nil {
 		log.Fatalf("cannot insert new activity into database: %v", err)
 	}
 }
 
-func ProlongLastActivity() {
+// Update or finish current activity
+func Update(finish bool) {
 	db := connectDb()
 	defer db.Close()
 
 	res, err := db.Exec(`
-		WITH last_activity AS (
-			SELECT id, name, start, strftime("%s","now") - start new_elapsed
+		WITH current AS (
+			SELECT id
 			FROM log
-			WHERE  strftime("%s","now") - (start + elapsed) < ? AND new_elapsed != elapsed
+			WHERE strftime('%s', 'now') - updated < ? AND elapsed = 0
 			ORDER BY id DESC
 			LIMIT 1
 		)
-		UPDATE log SET (elapsed)=(SELECT new_elapsed FROM last_activity WHERE last_activity.id=log.id)
-		WHERE id IN (SELECT id FROM last_activity)
-	`, timeoutForProlonging)
+		UPDATE log SET
+			elapsed=(CASE WHEN ? THEN strftime('%s', 'now') - started ELSE 0 END),
+			updated=strftime('%s', 'now')
+		WHERE id IN (SELECT id FROM current)
+	`, timeoutForProlonging, finish)
 	if err != nil {
-		log.Fatalf("cannot update last activity: %v", err)
+		log.Fatalf("cannot update current activity: %v", err)
 	}
-	log.Printf("res: %v", res)
 	rowCnt, err := res.RowsAffected()
 	if err != nil {
-		log.Fatalf("cannot update last activity: %v", err)
+		log.Fatalf("cannot update current activity: %v", err)
 	}
-	log.Printf("Count: %v", rowCnt)
 	if rowCnt == 0 {
-		log.Fatalf("no last activity")
+		log.Fatalf("no current activity")
 	}
 }

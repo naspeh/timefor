@@ -2,6 +2,7 @@ package main
 
 import (
 	"database/sql"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
@@ -21,26 +22,21 @@ func main() {
 	usage := fmt.Sprintf("expected %#v or %#v sub-command", newCmd.Name(), updateCmd.Name())
 
 	if len(os.Args) < 2 {
-		fmt.Println(usage)
-		os.Exit(1)
+		log.Fatalln(usage)
 	}
 
 	switch os.Args[1] {
 	case newCmd.Name():
 		_ = newCmd.Parse(os.Args[2:])
-		fmt.Println(newCmd.Args())
 		if len(newCmd.Args()) < 1 {
-			fmt.Println("expected not empty name argument")
-			os.Exit(1)
+			log.Fatalln("expected not empty name argument")
 		}
-		fmt.Println(newCmd.Args())
 		New(newCmd.Args()[0], *newShift)
 	case updateCmd.Name():
 		_ = updateCmd.Parse(os.Args[2:])
 		Update(*updateFinish)
 	default:
-		fmt.Println(usage)
-		os.Exit(1)
+		log.Fatalln(usage)
 	}
 }
 
@@ -52,12 +48,11 @@ func connectDb() *sql.DB {
 
 	var name string
 	err = db.QueryRow(`SELECT name FROM sqlite_master WHERE type="table" AND name="log"`).Scan(&name)
-	switch err {
-	case sql.ErrNoRows:
-		initDb(db)
-	case nil:
+	if err == nil {
 		log.Printf("SQLite database has been initialized already")
-	default:
+	} else if errors.Is(err, sql.ErrNoRows) {
+		initDb(db)
+	} else {
 		log.Fatal(err)
 	}
 	return db
@@ -78,7 +73,7 @@ func initDb(db *sql.DB) {
 		FOR EACH ROW
 		BEGIN
 			SELECT RAISE(ABORT, 'started must be latest')
-			WHERE NEW.started =< (SELECT MAX(started + elapsed) FROM log);
+			WHERE NEW.started <= (SELECT MAX(started + elapsed) FROM log);
 		END;
 
 		CREATE TRIGGER on_update_updated UPDATE ON log

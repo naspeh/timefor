@@ -1,14 +1,13 @@
 package main
 
 import (
-	"database/sql"
-	"errors"
 	"flag"
 	"fmt"
 	"log"
 	"os"
 	"time"
 
+	"github.com/jmoiron/sqlx"
 	_ "github.com/mattn/go-sqlite3"
 )
 
@@ -40,25 +39,23 @@ func main() {
 	}
 }
 
-func connectDb() *sql.DB {
-	db, err := sql.Open("sqlite3", "log.db")
+func connectDb() *sqlx.DB {
+	db, err := sqlx.Open("sqlite3", "log.db")
 	if err != nil {
 		log.Fatalf("cannot open SQLite database: %v", err)
 	}
 
-	var name string
-	err = db.QueryRow(`SELECT name FROM sqlite_master WHERE type="table" AND name="log"`).Scan(&name)
-	if err == nil {
-		log.Printf("SQLite database has been initialized already")
-	} else if errors.Is(err, sql.ErrNoRows) {
-		initDb(db)
-	} else {
+	var exists bool
+	err = db.QueryRow(`SELECT count(*) FROM sqlite_master WHERE type="table" AND name="log"`).Scan(&exists)
+	if err != nil {
 		log.Fatal(err)
+	} else if !exists {
+		initDb(db)
 	}
 	return db
 }
 
-func initDb(db *sql.DB) {
+func initDb(db *sqlx.DB) {
 	_, err := db.Exec(`
 		CREATE TABLE log(
 			id INTEGER PRIMARY KEY,
@@ -111,10 +108,12 @@ func New(name string, shift string) {
 		}
 		shiftSeconds = int(shiftDuration.Seconds())
 	}
-	_, err := db.Exec(
-		`INSERT INTO log (name, started) VALUES (?, strftime('%s', 'now') - ?)`,
-		name, shiftSeconds,
-	)
+	_, err := db.NamedExec(`
+		INSERT INTO log (name, started) VALUES (:name, strftime('%s', 'now') - :shiftSeconds)
+	`, map[string]interface{}{
+		"name":         name,
+		"shiftSeconds": shiftSeconds,
+	})
 	if err != nil {
 		log.Fatalf("cannot insert new activity into database: %v", err)
 	}
@@ -125,19 +124,22 @@ func Update(finish bool) {
 	db := connectDb()
 	defer db.Close()
 
-	res, err := db.Exec(`
+	res, err := db.NamedExec(`
 		WITH current AS (
 			SELECT id
 			FROM log
-			WHERE strftime('%s', 'now') - updated < ? AND elapsed = 0
+			WHERE strftime('%s', 'now') - updated < :timeoutForProlonging AND elapsed = 0
 			ORDER BY id DESC
 			LIMIT 1
 		)
 		UPDATE log SET
-			elapsed=(CASE WHEN ? THEN strftime('%s', 'now') - started ELSE 0 END),
+			elapsed=(CASE WHEN :shouldBeFinished THEN strftime('%s', 'now') - started ELSE 0 END),
 			updated=strftime('%s', 'now')
 		WHERE id IN (SELECT id FROM current)
-	`, timeoutForProlonging, finish)
+	`, map[string]interface{}{
+		"timeoutForProlonging": timeoutForProlonging,
+		"shouldBeFinished":     finish,
+	})
 	if err != nil {
 		log.Fatalf("cannot update current activity: %v", err)
 	}

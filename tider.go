@@ -3,8 +3,11 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"os"
+	"os/exec"
+	"strings"
 	"time"
 
 	"github.com/jmoiron/sqlx"
@@ -12,13 +15,24 @@ import (
 )
 
 const timeoutForProlonging = 600
+const timeForBreak = time.Duration(80) * time.Minute
 
 func main() {
 	newCmd := flag.NewFlagSet("new", flag.ExitOnError)
 	newShift := newCmd.String("shift", "", "start time shift like 10m, 1h10m, etc.")
+	newSelect := newCmd.Bool("select", false, "select name from rofi")
+
 	updateCmd := flag.NewFlagSet("update", flag.ExitOnError)
 	updateFinish := updateCmd.Bool("finish", false, "finish current activity")
-	usage := fmt.Sprintf("expected %#v or %#v sub-command", newCmd.Name(), updateCmd.Name())
+
+	showCmd := flag.NewFlagSet("show", flag.ExitOnError)
+
+	daemonCmd := flag.NewFlagSet("daemon", flag.ExitOnError)
+
+	usage := fmt.Sprintf(
+		"expected sub-command: %v",
+		[]string{newCmd.Name(), updateCmd.Name(), showCmd.Name(), daemonCmd.Name()},
+	)
 
 	if len(os.Args) < 2 {
 		log.Fatalln(usage)
@@ -27,13 +41,25 @@ func main() {
 	switch os.Args[1] {
 	case newCmd.Name():
 		_ = newCmd.Parse(os.Args[2:])
-		if len(newCmd.Args()) < 1 {
-			log.Fatalln("expected not empty name argument")
+		var name string
+		if *newSelect {
+			name = Select()
+		} else {
+			if len(newCmd.Args()) < 1 {
+				log.Fatalln("expected not empty name argument")
+			}
+			name = newCmd.Args()[0]
 		}
-		New(newCmd.Args()[0], *newShift)
+		New(name, *newShift)
 	case updateCmd.Name():
 		_ = updateCmd.Parse(os.Args[2:])
 		Update(*updateFinish)
+	case showCmd.Name():
+		_ = showCmd.Parse(os.Args[2:])
+		Show()
+	case daemonCmd.Name():
+		_ = daemonCmd.Parse(os.Args[2:])
+		Daemon()
 	default:
 		log.Fatalln(usage)
 	}
@@ -61,7 +87,7 @@ func initDb(db *sqlx.DB) {
 			id INTEGER PRIMARY KEY,
 			name TEXT NOT NULL,
 			started INTEGER NOT NULL,
-			elapsed INTEGER NOT NULL DEFAULT 0,
+			duration INTEGER NOT NULL DEFAULT 0,
 			updated INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
 			UNIQUE (name, started)
 		);
@@ -70,7 +96,21 @@ func initDb(db *sqlx.DB) {
 		FOR EACH ROW
 		BEGIN
 			SELECT RAISE(ABORT, 'started must be latest')
-			WHERE NEW.started <= (SELECT MAX(started + elapsed) FROM log);
+			WHERE NEW.started <= (SELECT MAX(started + duration) FROM log);
+		END;
+
+		CREATE TRIGGER on_insert_duration INSERT ON log
+		FOR EACH ROW
+		BEGIN
+			SELECT RAISE(ABORT, 'must be only one current activity with duration=0')
+			WHERE NEW.duration = 0 AND (SELECT count(*) FROM log WHERE duration=0);
+		END;
+
+		CREATE TRIGGER on_update_duration INSERT ON log
+		FOR EACH ROW
+		BEGIN
+			SELECT RAISE(ABORT, 'must be only one current activity with duration=0')
+			WHERE NEW.duration = 0 AND (SELECT count(*) FROM log WHERE duration=0 AND id != NEW.id);
 		END;
 
 		CREATE TRIGGER on_update_updated UPDATE ON log
@@ -85,8 +125,8 @@ func initDb(db *sqlx.DB) {
 			name,
 			date(started, 'unixepoch', 'localtime') start_date,
 			time(started, 'unixepoch', 'localtime') start_time,
-			elapsed,
-			elapsed / 60 elapsed_minutes,
+			duration,
+			duration / 60 duration_minutes,
 			datetime(updated, 'unixepoch', 'localtime') updated_ts
 		FROM log;
 	`)
@@ -100,6 +140,8 @@ func New(name string, shift string) {
 	db := connectDb()
 	defer db.Close()
 
+	UpdateIfExists(db, true)
+	name = strings.TrimSpace(name)
 	shiftSeconds := 0
 	if shift != "" {
 		shiftDuration, err := time.ParseDuration(shift)
@@ -119,21 +161,17 @@ func New(name string, shift string) {
 	}
 }
 
-// Update or finish current activity
-func Update(finish bool) {
-	db := connectDb()
-	defer db.Close()
-
+func UpdateIfExists(db *sqlx.DB, finish bool) bool {
 	res, err := db.NamedExec(`
 		WITH current AS (
 			SELECT id
 			FROM log
-			WHERE strftime('%s', 'now') - updated < :timeoutForProlonging AND elapsed = 0
+			WHERE strftime('%s', 'now') - updated < :timeoutForProlonging AND duration = 0
 			ORDER BY id DESC
 			LIMIT 1
 		)
 		UPDATE log SET
-			elapsed=(CASE WHEN :shouldBeFinished THEN strftime('%s', 'now') - started ELSE 0 END),
+			duration=(CASE WHEN :shouldBeFinished THEN strftime('%s', 'now') - started ELSE 0 END),
 			updated=strftime('%s', 'now')
 		WHERE id IN (SELECT id FROM current)
 	`, map[string]interface{}{
@@ -148,6 +186,104 @@ func Update(finish bool) {
 		log.Fatalf("cannot update current activity: %v", err)
 	}
 	if rowCnt == 0 {
+		_, err := db.Exec(`
+			UPDATE log SET duration = updated - started
+			WHERE duration = 0
+		`)
+		if err != nil {
+			log.Fatalf("cannot update current activity: %v", err)
+		}
+	}
+	return rowCnt != 0
+}
+
+// Update or finish current activity
+func Update(finish bool) {
+	db := connectDb()
+	defer db.Close()
+
+	updated := UpdateIfExists(db, finish)
+	if !updated {
 		log.Fatalf("no current activity")
+	}
+}
+
+// Select new activity from rofi
+func Select() string {
+	db := connectDb()
+	defer db.Close()
+
+	var names []string
+	err := db.Select(&names, `SELECT DISTINCT name FROM log ORDER BY started DESC`)
+	if err != nil {
+		log.Fatalf("cannot get names from SQLite database: %v", err)
+	}
+	cmd := exec.Command("rofi", "-dmenu")
+	cmdIn, _ := cmd.StdinPipe()
+	cmdOut, _ := cmd.StdoutPipe()
+	_ = cmd.Start()
+	for _, name := range names {
+		fmt.Fprintln(cmdIn, name)
+	}
+	cmdIn.Close()
+	selectedName, _ := ioutil.ReadAll(cmdOut)
+	_ = cmd.Wait()
+	return string(selectedName)
+}
+
+type Activity struct {
+	Name     string
+	Duration int
+}
+
+func fmtDuration(s int) string {
+	d := time.Duration(s) * time.Second
+	d = d.Round(time.Minute)
+	h := d / time.Hour
+	d -= h * time.Hour
+	m := d / time.Minute
+	return fmt.Sprintf("%02d:%02d", h, m)
+}
+
+func Current(db *sqlx.DB) (activity Activity, err error) {
+	err = db.Get(&activity, `
+		SELECT name, strftime('%s', 'now') - started AS duration
+		FROM log
+		WHERE strftime('%s', 'now') - updated < ? AND duration = 0
+		ORDER BY id DESC
+		LIMIT 1
+	`, timeoutForProlonging)
+	return activity, err
+}
+
+// Show current activity
+func Show() {
+	db := connectDb()
+	defer db.Close()
+
+	var color, label string
+	activity, err := Current(db)
+	if err != nil {
+		color, label = "#777777", fmt.Sprintf(" %v OFF", fmtDuration(0))
+	} else {
+		color, label = "#6666ee", fmt.Sprintf(" %v %v", fmtDuration(activity.Duration), activity.Name)
+	}
+	fmt.Printf("%v\n%v\n%v\n", label, label, color)
+}
+
+func Daemon() {
+	db := connectDb()
+	defer db.Close()
+
+	for {
+		activity, err := Current(db)
+		if err == nil {
+			UpdateIfExists(db, false)
+		}
+		if (time.Duration(activity.Duration) * time.Second) > timeForBreak {
+			cmd := exec.Command("sh", "-c", `notify-send "Take a break!"`)
+			_ = cmd.Run()
+		}
+		time.Sleep(1 * time.Minute)
 	}
 }

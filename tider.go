@@ -96,7 +96,7 @@ func initDb(db *sqlx.DB) {
 		FOR EACH ROW
 		BEGIN
 			SELECT RAISE(ABORT, 'started must be latest')
-			WHERE NEW.started <= (SELECT MAX(started + duration) FROM log);
+			WHERE NEW.started < (SELECT MAX(started + duration) FROM log);
 		END;
 
 		CREATE TRIGGER on_insert_duration INSERT ON log
@@ -133,6 +133,24 @@ func initDb(db *sqlx.DB) {
 	if err != nil {
 		log.Fatalf("cannot initiate SQLite database: %v", err)
 	}
+	configure(db)
+}
+
+func configure(db *sqlx.DB) {
+	sql := fmt.Sprintf(`
+		DROP VIEW IF EXISTS current;
+		CREATE VIEW current AS
+		SELECT *, strftime('%%s', 'now') - started AS duration
+		FROM log
+		WHERE strftime('%%s', 'now') - updated < %v AND duration = 0
+		ORDER BY id DESC
+		LIMIT 1
+	`, timeoutForProlonging)
+
+	_, err := db.Exec(sql)
+	if err != nil {
+		log.Fatalf("cannot initiate SQLite database: %v", err)
+	}
 }
 
 // New activity with name and optional time shift
@@ -140,8 +158,13 @@ func New(name string, shift string) {
 	db := connectDb()
 	defer db.Close()
 
-	UpdateIfExists(db, true)
 	name = strings.TrimSpace(name)
+	activity, err := Current(db)
+	if err == nil && activity.Name == name {
+		log.Printf("Keep tracking exisiting activity")
+		return
+	}
+	UpdateIfExists(db, true)
 	shiftSeconds := 0
 	if shift != "" {
 		shiftDuration, err := time.ParseDuration(shift)
@@ -150,7 +173,7 @@ func New(name string, shift string) {
 		}
 		shiftSeconds = int(shiftDuration.Seconds())
 	}
-	_, err := db.NamedExec(`
+	_, err = db.NamedExec(`
 		INSERT INTO log (name, started) VALUES (:name, strftime('%s', 'now') - :shiftSeconds)
 	`, map[string]interface{}{
 		"name":         name,
@@ -163,19 +186,11 @@ func New(name string, shift string) {
 
 func UpdateIfExists(db *sqlx.DB, finish bool) bool {
 	res, err := db.NamedExec(`
-		WITH current AS (
-			SELECT id
-			FROM log
-			WHERE strftime('%s', 'now') - updated < :timeoutForProlonging AND duration = 0
-			ORDER BY id DESC
-			LIMIT 1
-		)
 		UPDATE log SET
 			duration=(CASE WHEN :shouldBeFinished THEN strftime('%s', 'now') - started ELSE 0 END),
 			updated=strftime('%s', 'now')
 		WHERE id IN (SELECT id FROM current)
 	`, map[string]interface{}{
-		"timeoutForProlonging": timeoutForProlonging,
 		"shouldBeFinished":     finish,
 	})
 	if err != nil {
@@ -248,11 +263,8 @@ func fmtDuration(s int) string {
 func Current(db *sqlx.DB) (activity Activity, err error) {
 	err = db.Get(&activity, `
 		SELECT name, strftime('%s', 'now') - started AS duration
-		FROM log
-		WHERE strftime('%s', 'now') - updated < ? AND duration = 0
-		ORDER BY id DESC
-		LIMIT 1
-	`, timeoutForProlonging)
+		FROM current
+	`)
 	return activity, err
 }
 

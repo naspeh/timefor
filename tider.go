@@ -23,7 +23,7 @@ func main() {
 	newSelect := newCmd.Bool("select", false, "select name from rofi")
 
 	updateCmd := flag.NewFlagSet("update", flag.ExitOnError)
-	updateFinish := updateCmd.Bool("finish", false, "finish current activity")
+	updateFinish := updateCmd.Bool("finish", false, "finish the current activity")
 
 	showCmd := flag.NewFlagSet("show", flag.ExitOnError)
 
@@ -133,7 +133,7 @@ func configure(db *sqlx.DB) {
 	}
 }
 
-// New activity with name and optional time shift
+// New creates new activity with name and optional time shift
 func New(name string, shift string) {
 	db := connectDb()
 	defer db.Close()
@@ -164,6 +164,7 @@ func New(name string, shift string) {
 	}
 }
 
+// UpdateIfExists updates or finishes the current activity if exists
 func UpdateIfExists(db *sqlx.DB, finish bool) bool {
 	res, err := db.NamedExec(`
 		UPDATE log SET
@@ -174,11 +175,11 @@ func UpdateIfExists(db *sqlx.DB, finish bool) bool {
 		"shouldBeFinished":     finish,
 	})
 	if err != nil {
-		log.Fatalf("cannot update current activity: %v", err)
+		log.Fatalf("cannot update the current activity: %v", err)
 	}
 	rowCnt, err := res.RowsAffected()
 	if err != nil {
-		log.Fatalf("cannot update current activity: %v", err)
+		log.Fatalf("cannot update the current activity: %v", err)
 	}
 	if rowCnt == 0 {
 		_, err := db.Exec(`
@@ -186,13 +187,13 @@ func UpdateIfExists(db *sqlx.DB, finish bool) bool {
 			WHERE current
 		`)
 		if err != nil {
-			log.Fatalf("cannot update current activity: %v", err)
+			log.Fatalf("cannot update the current activity: %v", err)
 		}
 	}
 	return rowCnt != 0
 }
 
-// Update or finish current activity
+// Update updates or finishes the current activity
 func Update(finish bool) {
 	db := connectDb()
 	defer db.Close()
@@ -203,7 +204,7 @@ func Update(finish bool) {
 	}
 }
 
-// Select new activity from rofi
+// Select selects new activity using rofi menu
 func Select() string {
 	db := connectDb()
 	defer db.Close()
@@ -226,6 +227,7 @@ func Select() string {
 	return string(selectedName)
 }
 
+// Activity represents a named activity
 type Activity struct {
 	Name     string
 	Duration int
@@ -240,6 +242,7 @@ func fmtDuration(s int) string {
 	return fmt.Sprintf("%02d:%02d", h, m)
 }
 
+// Current returns the current activity if exists
 func Current(db *sqlx.DB) (activity Activity, err error) {
 	err = db.Get(&activity, `
 		SELECT name, duration
@@ -248,7 +251,7 @@ func Current(db *sqlx.DB) (activity Activity, err error) {
 	return activity, err
 }
 
-// Show current activity
+// Show shows short information about the current activity
 func Show() {
 	db := connectDb()
 	defer db.Close()
@@ -263,6 +266,7 @@ func Show() {
 	fmt.Printf("%v\n%v\n%v\n", label, label, color)
 }
 
+// Daemon updates the duration of the current activity then sleeps for a while
 func Daemon() {
 	db := connectDb()
 	defer db.Close()

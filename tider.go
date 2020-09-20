@@ -14,8 +14,8 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 )
 
-const timeoutForProlonging = 600
-const timeForBreak = time.Duration(80) * time.Minute
+const timeoutForProlonging = 10 * time.Minute
+const timeForBreak = 80 * time.Minute
 
 func main() {
 	newCmd := flag.NewFlagSet("new", flag.ExitOnError)
@@ -88,7 +88,7 @@ func initDb(db *sqlx.DB) {
 			name TEXT NOT NULL,
 			started INTEGER NOT NULL,
 			duration INTEGER NOT NULL DEFAULT 0,
-			updated INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+			current INTEGER UNIQUE DEFAULT 1 CHECK (current IN (1)),
 			UNIQUE (name, started)
 		);
 
@@ -99,26 +99,6 @@ func initDb(db *sqlx.DB) {
 			WHERE NEW.started < (SELECT MAX(started + duration) FROM log);
 		END;
 
-		CREATE TRIGGER on_insert_duration INSERT ON log
-		FOR EACH ROW
-		BEGIN
-			SELECT RAISE(ABORT, 'must be only one current activity with duration=0')
-			WHERE NEW.duration = 0 AND (SELECT count(*) FROM log WHERE duration=0);
-		END;
-
-		CREATE TRIGGER on_update_duration INSERT ON log
-		FOR EACH ROW
-		BEGIN
-			SELECT RAISE(ABORT, 'must be only one current activity with duration=0')
-			WHERE NEW.duration = 0 AND (SELECT count(*) FROM log WHERE duration=0 AND id != NEW.id);
-		END;
-
-		CREATE TRIGGER on_update_updated UPDATE ON log
-		FOR EACH ROW
-		BEGIN
-			UPDATE log SET updated=strftime('%s', 'now') WHERE id = NEW.id;
-		END;
-
 		CREATE VIEW log_pretty AS
 		SELECT
 			id,
@@ -127,7 +107,7 @@ func initDb(db *sqlx.DB) {
 			time(started, 'unixepoch', 'localtime') start_time,
 			duration,
 			duration / 60 duration_minutes,
-			datetime(updated, 'unixepoch', 'localtime') updated_ts
+			current
 		FROM log;
 	`)
 	if err != nil {
@@ -140,12 +120,12 @@ func configure(db *sqlx.DB) {
 	sql := fmt.Sprintf(`
 		DROP VIEW IF EXISTS current;
 		CREATE VIEW current AS
-		SELECT *, strftime('%%s', 'now') - started AS duration
+		SELECT *
 		FROM log
-		WHERE strftime('%%s', 'now') - updated < %v AND duration = 0
+		WHERE strftime('%%s', 'now') - started - duration < %v AND current
 		ORDER BY id DESC
 		LIMIT 1
-	`, timeoutForProlonging)
+	`, timeoutForProlonging.Seconds())
 
 	_, err := db.Exec(sql)
 	if err != nil {
@@ -187,8 +167,8 @@ func New(name string, shift string) {
 func UpdateIfExists(db *sqlx.DB, finish bool) bool {
 	res, err := db.NamedExec(`
 		UPDATE log SET
-			duration=(CASE WHEN :shouldBeFinished THEN strftime('%s', 'now') - started ELSE 0 END),
-			updated=strftime('%s', 'now')
+			duration=strftime('%s', 'now') - started,
+			current=(CASE WHEN :shouldBeFinished THEN NULL ELSE 1 END)
 		WHERE id IN (SELECT id FROM current)
 	`, map[string]interface{}{
 		"shouldBeFinished":     finish,
@@ -202,8 +182,8 @@ func UpdateIfExists(db *sqlx.DB, finish bool) bool {
 	}
 	if rowCnt == 0 {
 		_, err := db.Exec(`
-			UPDATE log SET duration = updated - started
-			WHERE duration = 0
+			UPDATE log SET current = NULL
+			WHERE current
 		`)
 		if err != nil {
 			log.Fatalf("cannot update current activity: %v", err)
@@ -262,7 +242,7 @@ func fmtDuration(s int) string {
 
 func Current(db *sqlx.DB) (activity Activity, err error) {
 	err = db.Get(&activity, `
-		SELECT name, strftime('%s', 'now') - started AS duration
+		SELECT name, duration
 		FROM current
 	`)
 	return activity, err

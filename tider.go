@@ -1,6 +1,8 @@
 package main
 
 import (
+	"database/sql"
+	"errors"
 	"flag"
 	"fmt"
 	"io/ioutil"
@@ -86,10 +88,9 @@ func initDb(db *sqlx.DB) {
 		CREATE TABLE log(
 			id INTEGER PRIMARY KEY,
 			name TEXT NOT NULL,
-			started INTEGER NOT NULL,
+			started INTEGER UNIQUE NOT NULL,
 			duration INTEGER NOT NULL DEFAULT 0,
-			current INTEGER UNIQUE DEFAULT 1 CHECK (current IN (1)),
-			UNIQUE (name, started)
+			current INTEGER UNIQUE DEFAULT 1 CHECK (current IN (1))
 		);
 
 		CREATE TRIGGER on_insert_started INSERT ON log
@@ -99,15 +100,22 @@ func initDb(db *sqlx.DB) {
 			WHERE NEW.started < (SELECT MAX(started + duration) FROM log);
 		END;
 
+		CREATE VIEW latest AS
+		SELECT id, name, started, duration, CASE WHEN current THEN 1 ELSE 0 END current
+		FROM log
+		ORDER BY started DESC
+		LIMIT 1;
+
 		CREATE VIEW log_pretty AS
 		SELECT
 			id,
 			name,
-			date(started, 'unixepoch', 'localtime') start_date,
-			time(started, 'unixepoch', 'localtime') start_time,
+			date(started, 'unixepoch', 'localtime') started_date,
+			time(started, 'unixepoch', 'localtime') started_time,
 			duration,
 			duration / 60 duration_minutes,
-			current
+			current,
+			datetime(started + duration, 'unixepoch', 'localtime') updated
 		FROM log;
 	`)
 	if err != nil {
@@ -139,22 +147,22 @@ func New(name string, shift string) {
 	defer db.Close()
 
 	name = strings.TrimSpace(name)
-	activity, err := Current(db)
-	if err == nil && activity.Name == name {
+	activity := Latest(db)
+	if activity.Active() && activity.Name == name {
 		log.Printf("Keep tracking exisiting activity")
 		return
 	}
 	UpdateIfExists(db, true)
-	shiftSeconds := 0
+	shiftSeconds := 0.0
 	if shift != "" {
 		shiftDuration, err := time.ParseDuration(shift)
 		if err != nil {
 			log.Fatalf("wrong shift format: %v", err)
 		}
-		shiftSeconds = int(shiftDuration.Seconds())
+		shiftSeconds = shiftDuration.Seconds()
 	}
-	_, err = db.NamedExec(`
-		INSERT INTO log (name, started) VALUES (:name, strftime('%s', 'now') - :shiftSeconds)
+	_, err := db.NamedExec(`
+		INSERT INTO log (name, started, duration) VALUES (:name, strftime('%s', 'now') - :shiftSeconds, :shiftSeconds)
 	`, map[string]interface{}{
 		"name":         name,
 		"shiftSeconds": shiftSeconds,
@@ -166,13 +174,24 @@ func New(name string, shift string) {
 
 // UpdateIfExists updates or finishes the current activity if exists
 func UpdateIfExists(db *sqlx.DB, finish bool) bool {
+	activity := Latest(db)
+	if activity.Expired() {
+		_ = db.MustExec(`
+			UPDATE log SET current=NULL WHERE id = ?
+		`, activity.Id)
+		return false
+	} else if !activity.Active() {
+		return false
+	}
+
 	res, err := db.NamedExec(`
 		UPDATE log SET
 			duration=strftime('%s', 'now') - started,
 			current=(CASE WHEN :shouldBeFinished THEN NULL ELSE 1 END)
-		WHERE id IN (SELECT id FROM current)
+		WHERE id IN (SELECT id FROM latest)
 	`, map[string]interface{}{
-		"shouldBeFinished":     finish,
+		"shouldBeFinished": finish,
+		"id":               activity.Id,
 	})
 	if err != nil {
 		log.Fatalf("cannot update the current activity: %v", err)
@@ -180,15 +199,6 @@ func UpdateIfExists(db *sqlx.DB, finish bool) bool {
 	rowCnt, err := res.RowsAffected()
 	if err != nil {
 		log.Fatalf("cannot update the current activity: %v", err)
-	}
-	if rowCnt == 0 {
-		_, err := db.Exec(`
-			UPDATE log SET current = NULL
-			WHERE current
-		`)
-		if err != nil {
-			log.Fatalf("cannot update the current activity: %v", err)
-		}
 	}
 	return rowCnt != 0
 }
@@ -229,26 +239,71 @@ func Select() string {
 
 // Activity represents a named activity
 type Activity struct {
-	Name     string
-	Duration int
+	Id          int64
+	Name        string
+	StartedInt  int64 `db:"started"`
+	DurationInt int64 `db:"duration"`
+	Current     bool
 }
 
-func fmtDuration(s int) string {
-	d := time.Duration(s) * time.Second
-	d = d.Round(time.Minute)
+func (a Activity) Format() string {
+	var color, label string
+	if a.Active() {
+		color = "#6666ee"
+		label = fmt.Sprintf(" %v %v", fmtDuration(a.Duration()), a.Name)
+	} else {
+		color = "#777777"
+		label = fmt.Sprintf(" %v OFF", fmtDuration(a.Duration()))
+	}
+	return fmt.Sprintf("%v\n%v\n%v\n", label, label, color)
+}
+
+func (a Activity) Started() time.Time {
+	if a.StartedInt == 0 {
+		return time.Now()
+	}
+	return time.Unix(a.StartedInt, 0)
+}
+
+func (a Activity) Duration() time.Duration {
+	if a.Active() {
+		return time.Since(a.Started())
+	}
+	return time.Since(a.Updated())
+}
+
+func (a Activity) Updated() time.Time {
+	if a.StartedInt == 0 {
+		return time.Now()
+	}
+	return time.Unix(a.StartedInt+a.DurationInt, 0)
+}
+
+func (a Activity) Expired() bool {
+	return time.Since(a.Updated()) > timeoutForProlonging
+}
+
+func (a Activity) Active() bool {
+	return a.Current && !a.Expired()
+}
+
+func fmtDuration(d time.Duration) string {
+	d = d.Truncate(time.Minute)
 	h := d / time.Hour
 	d -= h * time.Hour
 	m := d / time.Minute
 	return fmt.Sprintf("%02d:%02d", h, m)
 }
 
-// Current returns the current activity if exists
-func Current(db *sqlx.DB) (activity Activity, err error) {
-	err = db.Get(&activity, `
-		SELECT name, duration
-		FROM current
-	`)
-	return activity, err
+// Latest returns the latest activity if exists
+func Latest(db *sqlx.DB) (activity Activity) {
+	err := db.Get(&activity, `SELECT * FROM latest`)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Activity{}
+	} else if err != nil {
+		log.Fatalf("cannot get the latest activity: %v", err)
+	}
+	return activity
 }
 
 // Show shows short information about the current activity
@@ -256,14 +311,8 @@ func Show() {
 	db := connectDb()
 	defer db.Close()
 
-	var color, label string
-	activity, err := Current(db)
-	if err != nil {
-		color, label = "#777777", fmt.Sprintf(" %v OFF", fmtDuration(0))
-	} else {
-		color, label = "#6666ee", fmt.Sprintf(" %v %v", fmtDuration(activity.Duration), activity.Name)
-	}
-	fmt.Printf("%v\n%v\n%v\n", label, label, color)
+	activity := Latest(db)
+	fmt.Print(activity.Format())
 }
 
 // Daemon updates the duration of the current activity then sleeps for a while
@@ -272,11 +321,9 @@ func Daemon() {
 	defer db.Close()
 
 	for {
-		activity, err := Current(db)
-		if err == nil {
-			UpdateIfExists(db, false)
-		}
-		if (time.Duration(activity.Duration) * time.Second) > timeForBreak {
+		UpdateIfExists(db, false)
+		activity := Latest(db)
+		if activity.Duration() > timeForBreak {
 			cmd := exec.Command("sh", "-c", `notify-send "Take a break!"`)
 			_ = cmd.Run()
 		}

@@ -1,0 +1,116 @@
+- name: help
+  cmd: -h
+  output: |
+    Simple time logger
+
+    Usage:
+      tider [command]
+
+    Available Commands:
+      daemon      Update the duration for the current activity in a loop
+      finish      Finish the current activity
+      help        Help about any command
+      new         Create new activity
+      reject      Reject the current activity
+      show        Show current activity
+      update      Update the duration of the current activity (for cron use)
+
+    Flags:
+      -h, --help   help for tider
+
+    Use "tider [command] --help" for more information about a command.
+
+- name: daemon help
+  cmd: daemon -h
+  output: |
+    Update the duration for the current activity in a loop
+
+    Usage:
+      tider daemon [flags]
+
+    Flags:
+          --break-time duration    time for a break reminder (default 1h20m0s)
+      -h, --help                   help for daemon
+          --repeat-time duration   time to repeat a break reminder (default 10m0s)
+          --sleep-time duration    sleep time in the loop (default 30s)
+
+- name: new succeed
+  cmd: new --shift 10s -n @go
+
+- name: new failed (keep existing)
+  cmd: new --shift 10s -n @go
+  code: 1
+  output: |
+    Error: Keep tracking existing activity
+    Usage:
+      tider new [activity name] [flags]
+
+    Flags:
+      -h, --help             help for new
+      -n, --name string      activity name
+          --rofi             use rofi for name selection
+          --shift duration   start time shift (like 10m, 1m30s)
+
+    exit status 1
+
+- name: new failed (started must be latest)
+  cmd: new --shift 1m -n @test
+  code: 1
+  output: |
+    Error: cannot insert new activity into database: started must be latest
+    Usage:
+      tider new [activity name] [flags]
+
+    Flags:
+      -h, --help             help for new
+      -n, --name string      activity name
+          --rofi             use rofi for name selection
+          --shift duration   start time shift (like 10m, 1m30s)
+
+    exit status 1
+
+- name: new failed (negative shift)
+  cmd: new --shift -1m -n @go
+  code: 1
+  output: |
+    Error: shift cannot be negative
+    Usage:
+      tider new [activity name] [flags]
+
+    Flags:
+      -h, --help             help for new
+      -n, --name string      activity name
+          --rofi             use rofi for name selection
+          --shift duration   start time shift (like 10m, 1m30s)
+
+    exit status 1
+
+- name: new succeed (second)
+  cmd: new -n @go
+
+- name: show active (custom)
+  cmd: show -t "{{.Duration}} {{if .Active}}{{.Name}}{{else}}OFF{{end}}"
+  output: "{{.Duration}} @go"
+
+- name: show active
+  cmd: show
+  output: 00:00 @go
+
+- name: show active (i3blocks)
+  cmd: show --i3blocks
+  output: "00:00 @go\n\n#6666ee"
+
+- name: finish
+  cmd: finish
+
+- name: show disabled
+  cmd: show
+  output: 00:00 OFF
+
+- name: show disabled (i3blocks)
+  cmd: show --i3blocks
+  output: "00:00 OFF\n\n#666666"
+
+- name: show disabled (custom)
+  cmd: show -t "{{.Duration}} {{if .Active}}{{.Name}}{{else}}OFF{{end}}"
+  output: "{{.Duration}} OFF"

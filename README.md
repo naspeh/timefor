@@ -40,11 +40,7 @@ There is no report command yet, but I can get reports from SQLite directly
 timefor db
 
 # in SQLite session, today's activities grouped by name
-sqlite>
-SELECT name, SUM(duration) / 60 duration_minutes
-FROM log
-WHERE date(started, 'unixepoch', 'localtime') = date()
-GROUP BY name;
+> SELECT name, SUM(duration_minutes) FROM log_pretty WHERE date() = started_date GROUP BY name;
 ```
 
 P.S. It's a simplified version of a similar GTK based tool [tider](https://github.com/naspeh/tider).

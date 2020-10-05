@@ -422,11 +422,9 @@ func (a Activity) Started() time.Time {
 	return time.Unix(a.StartedInt, 0)
 }
 
-func (a Activity) Duration() time.Duration {
+func (a Activity) TimeSince() time.Duration {
 	var duration time.Duration
-	if !a.Current.Bool {
-		duration = time.Duration(a.DurationInt) * time.Second
-	} else if a.Active() {
+	if a.Active() {
 		duration = time.Since(a.Started())
 	} else {
 		duration = time.Since(a.Updated())
@@ -434,8 +432,23 @@ func (a Activity) Duration() time.Duration {
 	return duration.Truncate(time.Second)
 }
 
+func (a Activity) Duration() time.Duration {
+	var duration time.Duration
+	if a.Active() {
+		duration = time.Since(a.Started())
+	} else {
+		duration = time.Duration(a.DurationInt) * time.Second
+	}
+	return duration.Truncate(time.Second)
+}
+
 func (a Activity) FormatDuration() string {
-	d := a.Duration()
+	var d time.Duration
+	if a.Active() {
+		d = a.Duration()
+	} else {
+		d = a.TimeSince()
+	}
 	d = d.Truncate(time.Minute)
 	h := d / time.Hour
 	d -= h * time.Hour

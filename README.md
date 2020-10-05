@@ -1,9 +1,10 @@
-# Manual time tracker
+# Timefor
+
+It's a command-line time tracker with [rofi](https://github.com/davatorium/rofi) integration.
 
 It helps me focus on the right things, and it also reminds me to take a break.
 
-It's a command-line tool with [rofi](https://github.com/davatorium/rofi) integration. It uses just one simple SQLite database with one table `log`.
-
+It uses just one simple SQLite database with one simple table `log`.
 
 ## How do I use it?
 I run in the background

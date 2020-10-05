@@ -12,6 +12,7 @@
       help        Help about any command
       new         Create new activity
       reject      Reject the current activity
+      select      Select new activity using rofi
       show        Show current activity
       update      Update the duration of the current activity (for cron use)
 
@@ -35,10 +36,11 @@
           --sleep-time duration    sleep time in the loop (default 30s)
 
 - name: new succeed
-  cmd: new --shift 10s -n @go
+  cmd: new --shift 10s @go
+  output: New activity "@go" started
 
 - name: new failed (keep existing)
-  cmd: new --shift 10s -n @go
+  cmd: new --shift 10s @go
   code: 1
   output: |
     Error: Keep tracking existing activity
@@ -47,14 +49,12 @@
 
     Flags:
       -h, --help             help for new
-      -n, --name string      activity name
-          --rofi             use rofi for name selection
           --shift duration   start time shift (like 10m, 1m30s)
 
     exit status 1
 
 - name: new failed (started must be latest)
-  cmd: new --shift 1m -n @test
+  cmd: new --shift 1m @test
   code: 1
   output: |
     Error: cannot insert new activity into database: started must be latest
@@ -63,14 +63,12 @@
 
     Flags:
       -h, --help             help for new
-      -n, --name string      activity name
-          --rofi             use rofi for name selection
           --shift duration   start time shift (like 10m, 1m30s)
 
     exit status 1
 
 - name: new failed (negative shift)
-  cmd: new --shift -1m -n @go
+  cmd: new --shift -1m @go
   code: 1
   output: |
     Error: shift cannot be negative
@@ -79,14 +77,13 @@
 
     Flags:
       -h, --help             help for new
-      -n, --name string      activity name
-          --rofi             use rofi for name selection
           --shift duration   start time shift (like 10m, 1m30s)
 
     exit status 1
 
 - name: new succeed (second)
-  cmd: new -n @go
+  cmd: new @go
+  output: New activity "@go" started
 
 - name: show active (custom)
   cmd: show -t "{{.Duration}} {{if .Active}}{{.Name}}{{else}}OFF{{end}}"

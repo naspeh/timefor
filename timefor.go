@@ -9,6 +9,8 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"os/user"
+	"path"
 	"strings"
 	"text/template"
 	"time"
@@ -19,7 +21,6 @@ import (
 )
 
 const (
-	defaultDb           = "log.db"
 	timeForExpire       = 10 * time.Minute
 	sleepTimeForDaemon  = 30 * time.Second
 	breakTimeForDaemon  = 80 * time.Minute
@@ -31,7 +32,11 @@ const (
 func main() {
 	dbFile := os.Getenv("DBFILE")
 	if dbFile == "" {
-		dbFile = defaultDb
+		usr, err := user.Current()
+		if err != nil {
+			log.Fatalf("cannot get current user: %v", err)
+		}
+		dbFile = path.Join(usr.HomeDir, ".timefor.db")
 	}
 	db, err := sqlx.Open("sqlite3", dbFile)
 	if err != nil {
@@ -51,13 +56,8 @@ func newCmd(db *sqlx.DB) *cobra.Command {
 	var newCmd = &cobra.Command{
 		Use:   "new [activity name]",
 		Short: "Create new activity",
-		Args:  cobra.NoArgs,
+		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			name, err := cmd.Flags().GetString("name")
-			if err != nil {
-				return err
-			}
-
 			shift, err := cmd.Flags().GetDuration("shift")
 			if err != nil {
 				return err
@@ -65,20 +65,20 @@ func newCmd(db *sqlx.DB) *cobra.Command {
 			if shift < 0 {
 				return errors.New("shift cannot be negative")
 			}
-
-			rofi, err := cmd.Flags().GetBool("rofi")
-			if err != nil {
-				return err
-			}
-			if rofi {
-				name = Select(db)
-			}
-			return New(db, name, shift)
+			return New(db, args[0], shift)
 		},
 	}
-	newCmd.Flags().StringP("name", "n", "", "activity name")
 	newCmd.Flags().Duration("shift", 0, "start time shift (like 10m, 1m30s)")
-	newCmd.Flags().Bool("rofi", false, "use rofi for name selection")
+
+	var selectCmd = &cobra.Command{
+		Use:   "select",
+		Short: "Select new activity using rofi",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			name := Select(db)
+			return New(db, name, 0)
+		},
+	}
 
 	var updateCmd = &cobra.Command{
 		Use:   "update",
@@ -163,7 +163,7 @@ func newCmd(db *sqlx.DB) *cobra.Command {
 		Short: "Simple time logger",
 	}
 
-	rootCmd.AddCommand(newCmd, updateCmd, finishCmd, rejectCmd, showCmd, daemonCmd)
+	rootCmd.AddCommand(newCmd, selectCmd, updateCmd, finishCmd, rejectCmd, showCmd, daemonCmd)
 	return rootCmd
 }
 
@@ -255,6 +255,7 @@ func New(db *sqlx.DB, name string, shift time.Duration) error {
 	if err != nil {
 		return fmt.Errorf("cannot insert new activity into database: %v", err)
 	}
+	fmt.Printf("New activity %#v started\n", name)
 	return nil
 }
 
@@ -303,7 +304,6 @@ func Reject(db *sqlx.DB) {
 	_ = db.MustExec(`DELETE FROM log WHERE id = ?`, activity.ID)
 }
 
-
 // Show shows short information about the current activity
 func Show(db *sqlx.DB, tpl string) {
 	activity := Latest(db)
@@ -326,6 +326,7 @@ func Daemon(db *sqlx.DB, sleepTime time.Duration, breakTime time.Duration, repea
 		time.Sleep(sleepTime)
 	}
 }
+
 // Select selects new activity using rofi menu
 func Select(db *sqlx.DB) string {
 	var names []string

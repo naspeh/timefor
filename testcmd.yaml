@@ -8,6 +8,7 @@
 
     Available Commands:
       daemon      Update the duration for the current activity in a loop
+      db          Execute sqlite3 with db file
       finish      Finish the current activity
       help        Help about any command
       new         Create new activity

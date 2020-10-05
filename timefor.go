@@ -28,9 +28,11 @@ const (
 	i3blocksTpl         = "{{.FormatDuration}} {{if .Active}}{{.Name}}\n\n#6666ee{{else}}OFF\n\n#666666{{end}}"
 	defaultTpl          = "{{.FormatDuration}} {{if .Active}}{{.Name}}{{else}}OFF{{end}}"
 )
+var dbFile string
+
 
 func main() {
-	dbFile := os.Getenv("DBFILE")
+	dbFile = os.Getenv("DBFILE")
 	if dbFile == "" {
 		usr, err := user.Current()
 		if err != nil {
@@ -134,6 +136,18 @@ func newCmd(db *sqlx.DB) *cobra.Command {
 	showCmd.Flags().Bool("i3blocks", false, "format for i3blocks")
 	showCmd.Flags().StringP("template", "t", defaultTpl, "template for formatting")
 
+	var dbCmd = &cobra.Command{
+		Use:   "db",
+		Short: "Execute sqlite3 with db file",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c := exec.Command("sqlite3", "-box", dbFile)
+			c.Stdin = os.Stdin
+			c.Stdout = os.Stdout
+			c.Stderr = os.Stderr
+			return c.Run()
+		},
+	}
 	var daemonCmd = &cobra.Command{
 		Use:   "daemon",
 		Short: "Update the duration for the current activity in a loop",
@@ -163,7 +177,7 @@ func newCmd(db *sqlx.DB) *cobra.Command {
 		Short: "Simple time logger",
 	}
 
-	rootCmd.AddCommand(newCmd, selectCmd, updateCmd, finishCmd, rejectCmd, showCmd, daemonCmd)
+	rootCmd.AddCommand(newCmd, selectCmd, updateCmd, finishCmd, rejectCmd, showCmd, dbCmd, daemonCmd)
 	return rootCmd
 }
 

@@ -223,21 +223,6 @@ func initDb(db *sqlx.DB) {
 	if err != nil {
 		log.Fatalf("cannot initiate SQLite database: %v", err)
 	}
-
-	sql := fmt.Sprintf(`
-		DROP VIEW IF EXISTS current;
-		CREATE VIEW current AS
-		SELECT *
-		FROM log
-		WHERE strftime('%%s', 'now') - started - duration < %v AND current
-		ORDER BY id DESC
-		LIMIT 1
-	`, timeForExpire.Seconds())
-
-	_, err = db.Exec(sql)
-	if err != nil {
-		log.Fatalf("cannot initiate SQLite database: %v", err)
-	}
 }
 
 // Latest returns the latest activity if exists

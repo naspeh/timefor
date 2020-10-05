@@ -28,8 +28,8 @@ const (
 	i3blocksTpl         = "{{.FormatDuration}} {{if .Active}}{{.Name}}\n\n#6666ee{{else}}OFF\n\n#666666{{end}}"
 	defaultTpl          = "{{.FormatDuration}} {{if .Active}}{{.Name}}{{else}}OFF{{end}}"
 )
-var dbFile string
 
+var dbFile string
 
 func main() {
 	dbFile = os.Getenv("DBFILE")
@@ -333,7 +333,7 @@ func Daemon(db *sqlx.DB, sleepTime time.Duration, breakTime time.Duration, repea
 		duration := activeDuration(db)
 		if activity.Active() && duration > breakTime && time.Since(notified) > repeatTime {
 			args := []string{"Take a break!"}
-			if duration.Seconds() > breakTime.Seconds() * 1.2 {
+			if duration.Seconds() > breakTime.Seconds()*1.2 {
 				args = append(args, "-u", "critical")
 			}
 			err := exec.Command("notify-send", args...).Run()
@@ -373,7 +373,6 @@ func activeDuration(db *sqlx.DB) time.Duration {
 	}
 	return duration
 }
-
 
 // Select selects new activity using rofi menu
 func Select(db *sqlx.DB) string {
@@ -425,7 +424,7 @@ func (a Activity) Started() time.Time {
 
 func (a Activity) Duration() time.Duration {
 	var duration time.Duration
-	if ! a.Current.Bool {
+	if !a.Current.Bool {
 		duration = time.Duration(a.DurationInt) * time.Second
 	} else if a.Active() {
 		duration = time.Since(a.Started())

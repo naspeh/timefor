@@ -206,7 +206,7 @@ func initDb(db *sqlx.DB) {
 		END;
 
 		CREATE VIEW latest AS
-		SELECT id, name, started, duration, CASE WHEN current THEN 1 ELSE 0 END current
+		SELECT *
 		FROM log
 		ORDER BY started DESC
 		LIMIT 1;
@@ -330,8 +330,13 @@ func Daemon(db *sqlx.DB, sleepTime time.Duration, breakTime time.Duration, repea
 	for {
 		UpdateIfExists(db, false)
 		activity := Latest(db)
-		if activity.Duration() > breakTime && time.Since(notified) > repeatTime {
-			err := exec.Command("notify-send", "Take a break!").Run()
+		duration := activeDuration(db)
+		if activity.Active() && duration > breakTime && time.Since(notified) > repeatTime {
+			args := []string{"Take a break!"}
+			if duration.Seconds() > breakTime.Seconds() * 1.2 {
+				args = append(args, "-u", "critical")
+			}
+			err := exec.Command("notify-send", args...).Run()
 			if err != nil {
 				log.Printf("cannot send notification: %v", err)
 			}
@@ -340,6 +345,35 @@ func Daemon(db *sqlx.DB, sleepTime time.Duration, breakTime time.Duration, repea
 		time.Sleep(sleepTime)
 	}
 }
+
+func activeDuration(db *sqlx.DB) time.Duration {
+	rows, err := db.Queryx(`SELECT * FROM log ORDER BY started DESC LIMIT 100`)
+	if err != nil {
+		panic(err)
+	}
+	defer rows.Close()
+
+	duration := time.Duration(0)
+	cur := Activity{}
+	prev := Activity{}
+	for rows.Next() {
+		err := rows.StructScan(&cur)
+		if err != nil {
+			panic(err)
+		}
+		if prev.ID != 0 && prev.Started().Sub(cur.Updated()) > timeForExpire {
+			break
+		}
+		duration += cur.Duration()
+		prev = cur
+	}
+	err = rows.Err()
+	if err != nil {
+		panic(err)
+	}
+	return duration
+}
+
 
 // Select selects new activity using rofi menu
 func Select(db *sqlx.DB) string {
@@ -370,7 +404,7 @@ type Activity struct {
 	Name        string
 	StartedInt  int64 `db:"started"`
 	DurationInt int64 `db:"duration"`
-	Current     bool
+	Current     sql.NullBool
 }
 
 func (a Activity) Format(tpl string) string {
@@ -391,7 +425,9 @@ func (a Activity) Started() time.Time {
 
 func (a Activity) Duration() time.Duration {
 	var duration time.Duration
-	if a.Active() {
+	if ! a.Current.Bool {
+		duration = time.Duration(a.DurationInt) * time.Second
+	} else if a.Active() {
 		duration = time.Since(a.Started())
 	} else {
 		duration = time.Since(a.Updated())
@@ -420,5 +456,5 @@ func (a Activity) Expired() bool {
 }
 
 func (a Activity) Active() bool {
-	return a.Current && !a.Expired()
+	return a.Current.Bool && !a.Expired()
 }

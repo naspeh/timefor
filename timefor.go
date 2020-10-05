@@ -159,7 +159,7 @@ func newCmd(db *sqlx.DB) *cobra.Command {
 	daemonCmd.Flags().Duration("repeat-time", repeatTimeForDaemon, "time to repeat a break reminder")
 
 	var rootCmd = &cobra.Command{
-		Use:   "tider",
+		Use:   "timefor",
 		Short: "Simple time logger",
 	}
 

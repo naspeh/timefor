@@ -1,4 +1,4 @@
-module tider
+module timefor
 
 go 1.15
 

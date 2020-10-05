@@ -97,7 +97,7 @@ func TestCmd(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.Name, func(t *testing.T) {
-			line := fmt.Sprintf("DBFILE=%v go run tider.go %v", file.Name(), c.Cmd)
+			line := fmt.Sprintf("DBFILE=%v go run timefor.go %v", file.Name(), c.Cmd)
 			cmd := exec.Command("sh", "-c", line)
 			out, err := cmd.CombinedOutput()
 			var exiterr *exec.ExitError

@@ -4,7 +4,7 @@
     Simple time logger
 
     Usage:
-      tider [command]
+      timefor [command]
 
     Available Commands:
       daemon      Update the duration for the current activity in a loop
@@ -16,9 +16,9 @@
       update      Update the duration of the current activity (for cron use)
 
     Flags:
-      -h, --help   help for tider
+      -h, --help   help for timefor
 
-    Use "tider [command] --help" for more information about a command.
+    Use "timefor [command] --help" for more information about a command.
 
 - name: daemon help
   cmd: daemon -h
@@ -26,7 +26,7 @@
     Update the duration for the current activity in a loop
 
     Usage:
-      tider daemon [flags]
+      timefor daemon [flags]
 
     Flags:
           --break-time duration    time for a break reminder (default 1h20m0s)
@@ -43,7 +43,7 @@
   output: |
     Error: Keep tracking existing activity
     Usage:
-      tider new [activity name] [flags]
+      timefor new [activity name] [flags]
 
     Flags:
       -h, --help             help for new
@@ -59,7 +59,7 @@
   output: |
     Error: cannot insert new activity into database: started must be latest
     Usage:
-      tider new [activity name] [flags]
+      timefor new [activity name] [flags]
 
     Flags:
       -h, --help             help for new
@@ -75,7 +75,7 @@
   output: |
     Error: shift cannot be negative
     Usage:
-      tider new [activity name] [flags]
+      timefor new [activity name] [flags]
 
     Flags:
       -h, --help             help for new

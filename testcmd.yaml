@@ -40,6 +40,9 @@
   cmd: new --shift 10s @go
   output: New activity "@go" started
 
+- name: update succeed
+  cmd: update
+
 - name: new failed (keep existing)
   cmd: new --shift 10s @go
   code: 1
@@ -100,6 +103,19 @@
 
 - name: finish
   cmd: finish
+
+- name: update failed
+  cmd: update
+  code: 1
+  output: |
+    Error: no current activity
+    Usage:
+      timefor update [flags]
+
+    Flags:
+      -h, --help   help for update
+
+    exit status 1
 
 - name: show disabled
   cmd: show

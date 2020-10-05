@@ -87,8 +87,7 @@ func newCmd(db *sqlx.DB) *cobra.Command {
 		Short: "Update the duration of the current activity (for cron use)",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			Update(db, false)
-			return nil
+			return Update(db, false)
 		},
 	}
 
@@ -97,8 +96,7 @@ func newCmd(db *sqlx.DB) *cobra.Command {
 		Short: "Finish the current activity",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			Update(db, true)
-			return nil
+			return Update(db, true)
 		},
 	}
 
@@ -107,8 +105,7 @@ func newCmd(db *sqlx.DB) *cobra.Command {
 		Short: "Reject the current activity",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			Reject(db)
-			return nil
+			return Reject(db)
 		},
 	}
 
@@ -305,17 +302,22 @@ func UpdateIfExists(db *sqlx.DB, finish bool) bool {
 }
 
 // Update updates or finishes the current activity
-func Update(db *sqlx.DB, finish bool) {
+func Update(db *sqlx.DB, finish bool) error {
 	updated := UpdateIfExists(db, finish)
 	if !updated {
-		log.Fatalf("no current activity")
+		return errors.New("no current activity")
 	}
+	return nil
 }
 
 // Reject rejects the current activity (deletes it)
-func Reject(db *sqlx.DB) {
+func Reject(db *sqlx.DB) error {
 	activity := Latest(db)
-	_ = db.MustExec(`DELETE FROM log WHERE id = ?`, activity.ID)
+	_, err := db.Exec(`DELETE FROM log WHERE id = ?`, activity.ID)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 // Show shows short information about the current activity

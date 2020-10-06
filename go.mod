@@ -1,4 +1,4 @@
-module timefor
+module github.com/naspeh/timefor
 
 go 1.15
 

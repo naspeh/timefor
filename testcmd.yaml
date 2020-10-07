@@ -102,6 +102,13 @@
   cmd: show --i3blocks
   output: "00:00 @go\n\n#6666ee"
 
+- name: update succeed (name changed)
+  cmd: update --name @test
+
+- name: show active (name changed)
+  cmd: show
+  output: 00:00 @test
+
 - name: finish
   cmd: finish
 
@@ -114,7 +121,8 @@
       timefor update [flags]
 
     Flags:
-      -h, --help   help for update
+      -h, --help          help for update
+          --name string   change the name as well
 
     exit status 1
 

@@ -77,26 +77,39 @@ func newCmd(db *sqlx.DB) *cobra.Command {
 		Short: "Select new activity using rofi",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			update, err := cmd.Flags().GetBool("update")
+			if err != nil {
+				return err
+			}
 			name := Select(db)
+			if update {
+				return Update(db, name, false)
+			}
 			return New(db, name, 0)
 		},
 	}
+	selectCmd.Flags().Bool("update", false, "update the current activity instead")
 
 	var updateCmd = &cobra.Command{
 		Use:   "update",
 		Short: "Update the duration of the current activity (for cron use)",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return Update(db, false)
+			name, err := cmd.Flags().GetString("name")
+			if err != nil {
+				return err
+			}
+			return Update(db, name, false)
 		},
 	}
+	updateCmd.Flags().String("name", "", "change the name as well")
 
 	var finishCmd = &cobra.Command{
 		Use:   "finish",
 		Short: "Finish the current activity",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return Update(db, true)
+			return Update(db, "", true)
 		},
 	}
 
@@ -273,7 +286,7 @@ func New(db *sqlx.DB, name string, shift time.Duration) error {
 	if activity.Active() && activity.Name == name {
 		return errors.New("Keep tracking existing activity")
 	}
-	UpdateIfExists(db, true)
+	UpdateIfExists(db, "", true)
 	_, err := db.NamedExec(`
 		INSERT INTO log (name, started, duration) VALUES (:name, strftime('%s', 'now') - :shiftSeconds, :shiftSeconds)
 	`, map[string]interface{}{
@@ -288,7 +301,7 @@ func New(db *sqlx.DB, name string, shift time.Duration) error {
 }
 
 // UpdateIfExists updates or finishes the current activity if exists
-func UpdateIfExists(db *sqlx.DB, finish bool) bool {
+func UpdateIfExists(db *sqlx.DB, name string, finish bool) bool {
 	activity := Latest(db)
 	if activity.Expired() {
 		_ = db.MustExec(`
@@ -299,13 +312,19 @@ func UpdateIfExists(db *sqlx.DB, finish bool) bool {
 		return false
 	}
 
+	if name == "" {
+		name = activity.Name
+	}
+
 	res, err := db.NamedExec(`
 		UPDATE log SET
 			duration=strftime('%s', 'now') - started,
-			current=(CASE WHEN :shouldBeFinished THEN NULL ELSE 1 END)
+			current=(CASE WHEN :shouldBeFinished THEN NULL ELSE 1 END),
+			name=:name
 		WHERE id IN (SELECT id FROM latest)
 	`, map[string]interface{}{
 		"shouldBeFinished": finish,
+		"name": name,
 		"id":               activity.ID,
 	})
 	if err != nil {
@@ -319,8 +338,8 @@ func UpdateIfExists(db *sqlx.DB, finish bool) bool {
 }
 
 // Update updates or finishes the current activity
-func Update(db *sqlx.DB, finish bool) error {
-	updated := UpdateIfExists(db, finish)
+func Update(db *sqlx.DB, name string, finish bool) error {
+	updated := UpdateIfExists(db, name, finish)
 	if !updated {
 		return errors.New("no current activity")
 	}
@@ -347,7 +366,7 @@ func Show(db *sqlx.DB, tpl string) {
 func Daemon(db *sqlx.DB, sleepTime time.Duration, breakTime time.Duration, repeatTime time.Duration) {
 	var notified time.Time
 	for {
-		UpdateIfExists(db, false)
+		UpdateIfExists(db, "", false)
 		activity := Latest(db)
 		duration := activeDuration(db)
 		if activity.Active() && duration > breakTime && time.Since(notified) > repeatTime {

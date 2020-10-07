@@ -109,6 +109,13 @@
   cmd: show
   output: 00:00 @test
 
+- name: update succeed (name changed with trailing space)
+  cmd: update --name '@test '
+
+- name: show disabled (i3blocks)
+  cmd: show --i3blocks
+  output: "00:00 @test\n\n#6666ee"
+
 - name: finish
   cmd: finish
 

@@ -191,7 +191,6 @@ func newCmd(db *sqlx.DB) *cobra.Command {
 		},
 	}
 
-
 	var rootCmd = &cobra.Command{
 		Use:   "timefor",
 		Short: "A command-line time tracker with rofi integration",
@@ -312,6 +311,7 @@ func UpdateIfExists(db *sqlx.DB, name string, finish bool) bool {
 		return false
 	}
 
+	name = strings.TrimSpace(name)
 	if name == "" {
 		name = activity.Name
 	}
@@ -324,7 +324,7 @@ func UpdateIfExists(db *sqlx.DB, name string, finish bool) bool {
 		WHERE id IN (SELECT id FROM latest)
 	`, map[string]interface{}{
 		"shouldBeFinished": finish,
-		"name": name,
+		"name":             name,
 		"id":               activity.ID,
 	})
 	if err != nil {

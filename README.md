@@ -41,13 +41,20 @@ So I always see my current activity on the screen. If `timefor` activity is work
 Daemon will send notification using `notify-send` after 80 minutes by default, when I see such notification I plan to
 move away from my laptop in the near time.
 
+## Reports
 There is no report command yet, but I can get reports from SQLite directly
 ```sh
 # execute sqlite3 with db file
 timefor db
+```
 
-# in SQLite session, today's activities grouped by name
-> SELECT name, SUM(duration_minutes) FROM log_pretty WHERE date() = started_date GROUP BY name;
+I can use predefined views for simple queries in SQLite session
+```sql
+-- today's activities grouped by name
+SELECT * FROM log_daily WHERE started_date = date('now');
+
+-- yesterday's activities grouped by name
+SELECT * FROM log_daily WHERE started_date = date('now', '-1 day');
 ```
 
 P.S. It's a simplified version of a similar GTK based tool [tider](https://github.com/naspeh/tider).

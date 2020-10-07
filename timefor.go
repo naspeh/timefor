@@ -169,12 +169,22 @@ func newCmd(db *sqlx.DB) *cobra.Command {
 	daemonCmd.Flags().Duration("break-time", breakTimeForDaemon, "time for a break reminder")
 	daemonCmd.Flags().Duration("repeat-time", repeatTimeForDaemon, "time to repeat a break reminder")
 
-	var rootCmd = &cobra.Command{
-		Use:   "timefor",
-		Short: "Simple time logger",
+	var dbviewsCmd = &cobra.Command{
+		Use:   "dbviews",
+		Short: "Update sqlite views",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			initDbViews(db)
+			return nil
+		},
 	}
 
-	rootCmd.AddCommand(newCmd, selectCmd, updateCmd, finishCmd, rejectCmd, showCmd, dbCmd, daemonCmd)
+
+	var rootCmd = &cobra.Command{
+		Use:   "timefor",
+		Short: "A command-line time tracker with rofi integration",
+	}
+
+	rootCmd.AddCommand(newCmd, selectCmd, updateCmd, finishCmd, rejectCmd, showCmd, dbCmd, daemonCmd, dbviewsCmd)
 	return rootCmd
 }
 
@@ -201,13 +211,23 @@ func initDb(db *sqlx.DB) {
 			SELECT RAISE(ABORT, 'started must be latest')
 			WHERE NEW.started < (SELECT MAX(started + duration) FROM log);
 		END;
+	`)
+	if err != nil {
+		log.Fatalf("cannot initiate SQLite database: %v", err)
+	}
+	initDbViews(db)
+}
 
+func initDbViews(db *sqlx.DB) {
+	_, err := db.Exec(`
+		DROP VIEW IF EXISTS latest;
 		CREATE VIEW latest AS
 		SELECT *
 		FROM log
 		ORDER BY started DESC
 		LIMIT 1;
 
+		DROP VIEW IF EXISTS log_pretty;
 		CREATE VIEW log_pretty AS
 		SELECT
 			id,
@@ -219,6 +239,18 @@ func initDb(db *sqlx.DB) {
 			current,
 			datetime(started + duration, 'unixepoch', 'localtime') updated
 		FROM log;
+
+		DROP VIEW IF EXISTS log_daily;
+		CREATE VIEW log_daily AS
+		SELECT
+			started_date,
+			name,
+			time(SUM(duration), 'unixepoch') total_duration
+		FROM log_pretty
+		GROUP BY started_date, name;
+
+		-- Drop deprecated views
+		DROP VIEW IF EXISTS current;
 	`)
 	if err != nil {
 		log.Fatalf("cannot initiate SQLite database: %v", err)

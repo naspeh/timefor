@@ -1,7 +1,7 @@
 - name: help
   cmd: -h
   output: |
-    Simple time logger
+    A command-line time tracker with rofi integration
 
     Usage:
       timefor [command]
@@ -9,6 +9,7 @@
     Available Commands:
       daemon      Update the duration for the current activity in a loop
       db          Execute sqlite3 with db file
+      dbviews     Update sqlite views
       finish      Finish the current activity
       help        Help about any command
       new         Create new activity

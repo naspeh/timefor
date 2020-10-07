@@ -11,7 +11,7 @@ It uses just one simple SQLite database with one simple table `log`.
 go get github.com/naspeh/timefor
 ```
 
-Or just download binary from [release page.](https://github.com/naspeh/timefor/releases/tag/v0.1-alpha)
+Or just download binary from [release page.](https://github.com/naspeh/timefor/releases/download/v0.1-alpha/timefor)
 
 ## How do I use it?
 I run in the background

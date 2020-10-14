@@ -255,9 +255,10 @@ func initDbViews(db *sqlx.DB) {
 		DROP VIEW IF EXISTS log_daily;
 		CREATE VIEW log_daily AS
 		SELECT
-			started_date,
+			started_date as date,
 			name,
-			time(SUM(duration), 'unixepoch') total_duration
+			time(SUM(duration), 'unixepoch') duration_pretty,
+			SUM(duration) duration
 		FROM log_pretty
 		GROUP BY started_date, name;
 

@@ -20,6 +20,19 @@ jobs:
             exit 1
           fi
 
+      - name: go build
+        run: |
+          set -e
+          sha1sum timefor
+          go build
+          out=$(git status --porcelain)
+          if [ -n "$out" ]; then
+            echo 'Run "go build" and commit binary'
+            echo $out
+            sha1sum timefor
+            exit 1
+          fi
+
       - run: go vet
   test:
     runs-on: ubuntu-latest

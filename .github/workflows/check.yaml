@@ -1,0 +1,34 @@
+name: check code
+on: [push]
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions/setup-go@v2
+        with:
+          go-version: '1.15.2'
+      - run: go version
+
+      - name: gofmt
+        run: |
+          set -e
+          out=$(gofmt -s -l *.go)
+          if [ -n "$out" ]; then
+            echo "All the following files are not correctly formatted"
+            echo $out
+            exit 1
+          fi
+
+      - run: go vet
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions/setup-go@v2
+        with:
+          go-version: '1.15.2'
+      - run: go version
+
+      - name: test
+        run: go test -v

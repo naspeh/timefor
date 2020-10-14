@@ -247,7 +247,7 @@ func initDbViews(db *sqlx.DB) {
 			date(started, 'unixepoch', 'localtime') started_date,
 			time(started, 'unixepoch', 'localtime') started_time,
 			duration,
-			duration / 60 duration_minutes,
+			time(duration, 'unixepoch') duration_pretty,
 			current,
 			datetime(started + duration, 'unixepoch', 'localtime') updated
 		FROM log;

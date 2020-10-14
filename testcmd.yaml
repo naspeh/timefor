@@ -23,7 +23,7 @@
 
     Use "timefor [command] --help" for more information about a command.
 
-- name: daemon help
+- name: daemon-help
   cmd: daemon -h
   output: |
     Update the duration for the current activity in a loop
@@ -37,14 +37,14 @@
           --repeat-time duration   time to repeat a break reminder (default 10m0s)
           --sleep-time duration    sleep time in the loop (default 30s)
 
-- name: new succeed
+- name: new-succeed
   cmd: new --shift 10s @go
   output: New activity "@go" started
 
-- name: update succeed
+- name: update-succeed
   cmd: update
 
-- name: new failed (keep existing)
+- name: new-failed--keep-existing
   cmd: new --shift 10s @go
   code: 1
   output: |
@@ -56,9 +56,7 @@
       -h, --help             help for new
           --shift duration   start time shift (like 10m, 1m30s)
 
-    exit status 1
-
-- name: new failed (started must be latest)
+- name: new-failed--started-must-be-latest
   cmd: new --shift 1m @test
   code: 1
   output: |
@@ -70,9 +68,7 @@
       -h, --help             help for new
           --shift duration   start time shift (like 10m, 1m30s)
 
-    exit status 1
-
-- name: new failed (negative shift)
+- name: new-failed--negative-shift
   cmd: new --shift -1m @go
   code: 1
   output: |
@@ -84,42 +80,40 @@
       -h, --help             help for new
           --shift duration   start time shift (like 10m, 1m30s)
 
-    exit status 1
-
-- name: new succeed (second)
+- name: new-succeed--second
   cmd: new @go
   output: New activity "@go" started
 
-- name: show active (custom)
+- name: show-active--custom
   cmd: show -t "{{.Duration}} {{if .Active}}{{.Name}}{{else}}OFF{{end}}"
   output: "{{.Duration}} @go"
 
-- name: show active
+- name: show-active
   cmd: show
   output: 00:00 @go
 
-- name: show active (i3blocks)
+- name: show-active--i3blocks
   cmd: show --i3blocks
   output: "00:00 @go\n\n#6666ee"
 
-- name: update succeed (name changed)
+- name: update-succeed--name-changed
   cmd: update --name @test
 
-- name: show active (name changed)
+- name: show-active--name-changed
   cmd: show
   output: 00:00 @test
 
-- name: update succeed (name changed with trailing space)
+- name: update-succeed--name-changed-with-trailing-space
   cmd: update --name '@test '
 
-- name: show disabled (i3blocks)
+- name: show-active--name-changed-with-trailing-space
   cmd: show --i3blocks
   output: "00:00 @test\n\n#6666ee"
 
 - name: finish
   cmd: finish
 
-- name: update failed
+- name: update-failed
   cmd: update
   code: 1
   output: |
@@ -131,16 +125,14 @@
       -h, --help          help for update
           --name string   change the name as well
 
-    exit status 1
-
-- name: show disabled
+- name: show-disabled
   cmd: show
   output: 00:00 OFF
 
-- name: show disabled (i3blocks)
+- name: show-disabled--i3blocks
   cmd: show --i3blocks
   output: "00:00 OFF\n\n#666666"
 
-- name: show disabled (custom)
+- name: show-disabled--custom
   cmd: show -t "{{.Duration}} {{if .Active}}{{.Name}}{{else}}OFF{{end}}"
   output: "{{.Duration}} OFF"

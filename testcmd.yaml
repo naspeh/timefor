@@ -8,16 +8,16 @@
 
     Available Commands:
       add         Add new activity
-      daemon      Update the duration for the current activity in a loop
+      daemon      Update the duration for current activity in a loop
       db          Execute sqlite3 with db file
       dbviews     Update sqlite views
-      finish      Finish the current activity
+      finish      Finish current activity
       help        Help about any command
       notify      Notify about current activity using notify-send
-      reject      Reject the current activity
+      reject      Reject current activity
       select      Select new activity using rofi
       show        Show current activity
-      update      Update the duration of the current activity (for cron use)
+      update      Update the duration of current activity (for cron use)
 
     Flags:
       -h, --help   help for timefor
@@ -27,7 +27,7 @@
 - name: daemon-help
   cmd: daemon -h
   output: |
-    Update the duration for the current activity in a loop
+    Update the duration for current activity in a loop
 
     Usage:
       timefor daemon [flags]

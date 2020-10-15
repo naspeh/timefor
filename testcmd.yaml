@@ -9,7 +9,6 @@
     Available Commands:
       daemon      Update the duration for current activity in a loop
       db          Execute sqlite3 with db file
-      dbviews     Update sqlite views
       finish      Finish current activity
       help        Help about any command
       notify      Notify about current activity using notify-send

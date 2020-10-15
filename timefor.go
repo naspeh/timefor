@@ -165,18 +165,6 @@ func newCmd(db *sqlx.DB) *cobra.Command {
 		},
 	}
 
-	var dbCmd = &cobra.Command{
-		Use:   "db",
-		Short: "Execute sqlite3 with db file",
-		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			c := exec.Command("sqlite3", "-box", dbFile)
-			c.Stdin = os.Stdin
-			c.Stdout = os.Stdout
-			c.Stderr = os.Stderr
-			return c.Run()
-		},
-	}
 	var daemonCmd = &cobra.Command{
 		Use:   "daemon",
 		Short: "Update the duration for current activity in a loop",
@@ -201,14 +189,27 @@ func newCmd(db *sqlx.DB) *cobra.Command {
 	daemonCmd.Flags().Duration("break-time", breakTimeForDaemon, "time for a break reminder")
 	daemonCmd.Flags().Duration("repeat-time", repeatTimeForDaemon, "time to repeat a break reminder")
 
-	var dbviewsCmd = &cobra.Command{
-		Use:   "dbviews",
-		Short: "Update sqlite views",
+	var dbCmd = &cobra.Command{
+		Use:   "db",
+		Short: "Execute sqlite3 with db file",
+		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			initDbViews(db)
-			return nil
+			dbviews, err := cmd.Flags().GetBool("update-views")
+			if err != nil {
+				return err
+			}
+			if dbviews {
+				initDbViews(db)
+				return nil
+			}
+			c := exec.Command("sqlite3", "-box", dbFile)
+			c.Stdin = os.Stdin
+			c.Stdout = os.Stdout
+			c.Stderr = os.Stderr
+			return c.Run()
 		},
 	}
+	dbCmd.Flags().Bool("update-views", false, "update sqlite views and exit")
 
 	var rootCmd = &cobra.Command{
 		Use:   "timefor",
@@ -225,7 +226,6 @@ func newCmd(db *sqlx.DB) *cobra.Command {
 		notifyCmd,
 		dbCmd,
 		daemonCmd,
-		dbviewsCmd,
 	)
 	return rootCmd
 }

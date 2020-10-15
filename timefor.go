@@ -55,9 +55,9 @@ func main() {
 }
 
 func newCmd(db *sqlx.DB) *cobra.Command {
-	var newCmd = &cobra.Command{
-		Use:   "new [activity name]",
-		Short: "Create new activity",
+	var addCmd = &cobra.Command{
+		Use:   "add [activity name]",
+		Short: "Add new activity",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			shift, err := cmd.Flags().GetDuration("shift")
@@ -67,10 +67,10 @@ func newCmd(db *sqlx.DB) *cobra.Command {
 			if shift < 0 {
 				return errors.New("shift cannot be negative")
 			}
-			return New(db, args[0], shift)
+			return Add(db, args[0], shift)
 		},
 	}
-	newCmd.Flags().Duration("shift", 0, "start time shift (like 10m, 1m30s)")
+	addCmd.Flags().Duration("shift", 0, "start time shift (like 10m, 1m30s)")
 
 	var selectCmd = &cobra.Command{
 		Use:   "select",
@@ -85,7 +85,7 @@ func newCmd(db *sqlx.DB) *cobra.Command {
 			if update {
 				return Update(db, name, false)
 			}
-			return New(db, name, 0)
+			return Add(db, name, 0)
 		},
 	}
 	selectCmd.Flags().Bool("update", false, "update the current activity instead")
@@ -196,7 +196,7 @@ func newCmd(db *sqlx.DB) *cobra.Command {
 		Short: "A command-line time tracker with rofi integration",
 	}
 
-	rootCmd.AddCommand(newCmd, selectCmd, updateCmd, finishCmd, rejectCmd, showCmd, dbCmd, daemonCmd, dbviewsCmd)
+	rootCmd.AddCommand(addCmd, selectCmd, updateCmd, finishCmd, rejectCmd, showCmd, dbCmd, daemonCmd, dbviewsCmd)
 	return rootCmd
 }
 
@@ -279,8 +279,8 @@ func Latest(db *sqlx.DB) (activity Activity) {
 	return activity
 }
 
-// New creates new activity with name and optional time shift
-func New(db *sqlx.DB, name string, shift time.Duration) error {
+// Add adds new activity
+func Add(db *sqlx.DB, name string, shift time.Duration) error {
 	name = strings.TrimSpace(name)
 	activity := Latest(db)
 	if activity.Active() && activity.Name == name {

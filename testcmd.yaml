@@ -13,6 +13,7 @@
       dbviews     Update sqlite views
       finish      Finish the current activity
       help        Help about any command
+      notify      Notify about current activity using notify-send
       reject      Reject the current activity
       select      Select new activity using rofi
       show        Show current activity

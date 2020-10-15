@@ -146,6 +146,25 @@ func newCmd(db *sqlx.DB) *cobra.Command {
 	showCmd.Flags().Bool("i3blocks", false, "format for i3blocks")
 	showCmd.Flags().StringP("template", "t", defaultTpl, "template for formatting")
 
+	var notifyCmd = &cobra.Command{
+		Use:   "notify",
+		Short: "Notify about current activity using notify-send",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			activity := Latest(db)
+			duration := activeDuration(db)
+			args = []string{
+				fmt.Sprintf("Current: %v", activity.Format(defaultTpl)),
+				fmt.Sprintf("Active for %v", formatDuration(duration)),
+			}
+			err := exec.Command("notify-send", args...).Run()
+			if err != nil {
+				log.Printf("cannot send notification: %v", err)
+			}
+			return nil
+		},
+	}
+
 	var dbCmd = &cobra.Command{
 		Use:   "db",
 		Short: "Execute sqlite3 with db file",
@@ -196,7 +215,18 @@ func newCmd(db *sqlx.DB) *cobra.Command {
 		Short: "A command-line time tracker with rofi integration",
 	}
 
-	rootCmd.AddCommand(addCmd, selectCmd, updateCmd, finishCmd, rejectCmd, showCmd, dbCmd, daemonCmd, dbviewsCmd)
+	rootCmd.AddCommand(
+		addCmd,
+		selectCmd,
+		updateCmd,
+		finishCmd,
+		rejectCmd,
+		showCmd,
+		notifyCmd,
+		dbCmd,
+		daemonCmd,
+		dbviewsCmd,
+	)
 	return rootCmd
 }
 
@@ -371,7 +401,10 @@ func Daemon(db *sqlx.DB, sleepTime time.Duration, breakTime time.Duration, repea
 		activity := Latest(db)
 		duration := activeDuration(db)
 		if activity.Active() && duration > breakTime && time.Since(notified) > repeatTime {
-			args := []string{"Take a break!"}
+			args := []string{
+				"Take a break!",
+				fmt.Sprintf("Active for %v already", formatDuration(duration)),
+			}
 			if duration.Seconds() > breakTime.Seconds()*1.2 {
 				args = append(args, "-u", "critical")
 			}
@@ -411,6 +444,14 @@ func activeDuration(db *sqlx.DB) time.Duration {
 		panic(err)
 	}
 	return duration
+}
+
+func formatDuration(d time.Duration) string {
+	d = d.Truncate(time.Minute)
+	h := d / time.Hour
+	d -= h * time.Hour
+	m := d / time.Minute
+	return fmt.Sprintf("%02d:%02d", h, m)
 }
 
 // Select selects new activity using rofi menu
@@ -488,11 +529,7 @@ func (a Activity) FormatDuration() string {
 	} else {
 		d = a.TimeSince()
 	}
-	d = d.Truncate(time.Minute)
-	h := d / time.Hour
-	d -= h * time.Hour
-	m := d / time.Minute
-	return fmt.Sprintf("%02d:%02d", h, m)
+	return formatDuration(d)
 }
 
 func (a Activity) Updated() time.Time {

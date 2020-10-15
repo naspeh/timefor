@@ -31,7 +31,7 @@ func TestSchema(t *testing.T) {
 	defer db.Close()
 	initDb(db)
 
-	err := Add(db, "test", 0)
+	err := Start(db, "test", 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -49,7 +49,7 @@ func TestSchema(t *testing.T) {
 		t.Errorf("log table should have 1 row, but it has %v", count)
 	}
 
-	err = Add(db, "test", 0)
+	err = Start(db, "test", 0)
 	if diff := cmp.Diff(err.Error(), "Keep tracking existing activity"); diff != "" {
 		t.Errorf("expected different error: %v", diff)
 	}
@@ -70,7 +70,7 @@ func TestSchema(t *testing.T) {
 		t.Errorf("expected different error: %v", diff)
 	}
 
-	err = Add(db, "test2", 0)
+	err = Start(db, "test2", 0)
 	if diff := cmp.Diff(err.Error(), "cannot insert new activity into database: UNIQUE constraint failed: log.started"); diff != "" {
 		t.Errorf("expected different error: %v", diff)
 	}

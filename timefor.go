@@ -55,9 +55,9 @@ func main() {
 }
 
 func newCmd(db *sqlx.DB) *cobra.Command {
-	var addCmd = &cobra.Command{
-		Use:   "add [activity name]",
-		Short: "Add new activity",
+	var startCmd = &cobra.Command{
+		Use:   "start [activity name]",
+		Short: "Start new activity",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			shift, err := cmd.Flags().GetDuration("shift")
@@ -67,10 +67,10 @@ func newCmd(db *sqlx.DB) *cobra.Command {
 			if shift < 0 {
 				return errors.New("shift cannot be negative")
 			}
-			return Add(db, args[0], shift)
+			return Start(db, args[0], shift)
 		},
 	}
-	addCmd.Flags().Duration("shift", 0, "start time shift (like 10m, 1m30s)")
+	startCmd.Flags().Duration("shift", 0, "start time shift (like 10m, 1m30s)")
 
 	var selectCmd = &cobra.Command{
 		Use:   "select",
@@ -85,7 +85,7 @@ func newCmd(db *sqlx.DB) *cobra.Command {
 			if update {
 				return Update(db, name, false)
 			}
-			return Add(db, name, 0)
+			return Start(db, name, 0)
 		},
 	}
 	selectCmd.Flags().Bool("update", false, "update current activity instead")
@@ -216,7 +216,7 @@ func newCmd(db *sqlx.DB) *cobra.Command {
 	}
 
 	rootCmd.AddCommand(
-		addCmd,
+		startCmd,
 		selectCmd,
 		updateCmd,
 		finishCmd,
@@ -309,8 +309,8 @@ func Latest(db *sqlx.DB) (activity Activity) {
 	return activity
 }
 
-// Add adds new activity
-func Add(db *sqlx.DB, name string, shift time.Duration) error {
+// Start starts new activity
+func Start(db *sqlx.DB, name string, shift time.Duration) error {
 	name = strings.TrimSpace(name)
 	activity := Latest(db)
 	if activity.Active() && activity.Name == name {

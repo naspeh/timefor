@@ -88,11 +88,11 @@ func newCmd(db *sqlx.DB) *cobra.Command {
 			return Add(db, name, 0)
 		},
 	}
-	selectCmd.Flags().Bool("update", false, "update the current activity instead")
+	selectCmd.Flags().Bool("update", false, "update current activity instead")
 
 	var updateCmd = &cobra.Command{
 		Use:   "update",
-		Short: "Update the duration of the current activity (for cron use)",
+		Short: "Update the duration of current activity (for cron use)",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name, err := cmd.Flags().GetString("name")
@@ -106,7 +106,7 @@ func newCmd(db *sqlx.DB) *cobra.Command {
 
 	var finishCmd = &cobra.Command{
 		Use:   "finish",
-		Short: "Finish the current activity",
+		Short: "Finish current activity",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return Update(db, "", true)
@@ -115,7 +115,7 @@ func newCmd(db *sqlx.DB) *cobra.Command {
 
 	var rejectCmd = &cobra.Command{
 		Use:   "reject",
-		Short: "Reject the current activity",
+		Short: "Reject current activity",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return Reject(db)
@@ -179,7 +179,7 @@ func newCmd(db *sqlx.DB) *cobra.Command {
 	}
 	var daemonCmd = &cobra.Command{
 		Use:   "daemon",
-		Short: "Update the duration for the current activity in a loop",
+		Short: "Update the duration for current activity in a loop",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			sleepTime, err := cmd.Flags().GetDuration("sleep-time")
 			if err != nil {
@@ -330,7 +330,7 @@ func Add(db *sqlx.DB, name string, shift time.Duration) error {
 	return nil
 }
 
-// UpdateIfExists updates or finishes the current activity if exists
+// UpdateIfExists updates or finishes current activity if exists
 func UpdateIfExists(db *sqlx.DB, name string, finish bool) bool {
 	activity := Latest(db)
 	if activity.Expired() {
@@ -359,16 +359,16 @@ func UpdateIfExists(db *sqlx.DB, name string, finish bool) bool {
 		"id":               activity.ID,
 	})
 	if err != nil {
-		log.Fatalf("cannot update the current activity: %v", err)
+		log.Fatalf("cannot update current activity: %v", err)
 	}
 	rowCnt, err := res.RowsAffected()
 	if err != nil {
-		log.Fatalf("cannot update the current activity: %v", err)
+		log.Fatalf("cannot update current activity: %v", err)
 	}
 	return rowCnt != 0
 }
 
-// Update updates or finishes the current activity
+// Update updates or finishes current activity
 func Update(db *sqlx.DB, name string, finish bool) error {
 	updated := UpdateIfExists(db, name, finish)
 	if !updated {
@@ -377,7 +377,7 @@ func Update(db *sqlx.DB, name string, finish bool) error {
 	return nil
 }
 
-// Reject rejects the current activity (deletes it)
+// Reject rejects current activity (deletes it)
 func Reject(db *sqlx.DB) error {
 	activity := Latest(db)
 	_, err := db.Exec(`DELETE FROM log WHERE id = ?`, activity.ID)
@@ -387,13 +387,13 @@ func Reject(db *sqlx.DB) error {
 	return nil
 }
 
-// Show shows short information about the current activity
+// Show shows short information about current activity
 func Show(db *sqlx.DB, tpl string) {
 	activity := Latest(db)
 	fmt.Println(activity.Format(tpl))
 }
 
-// Daemon updates the duration of the current activity then sleeps for a while
+// Daemon updates the duration of current activity then sleeps for a while
 func Daemon(db *sqlx.DB, sleepTime time.Duration, breakTime time.Duration, repeatTime time.Duration) {
 	var notified time.Time
 	for {

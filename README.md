@@ -53,8 +53,8 @@ There is one main table `log` and few useful views.
 I can use predefined views for simple queries in SQLite session
 ```sql
 -- today's activities grouped by name
-SELECT * FROM log_daily WHERE started_date = date('now');
+SELECT * FROM log_daily WHERE date = date('now');
 
 -- yesterday's activities grouped by name
-SELECT * FROM log_daily WHERE started_date = date('now', '-1 day');
+SELECT * FROM log_daily WHERE date = date('now', '-1 day');
 ```

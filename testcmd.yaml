@@ -11,7 +11,7 @@
       db          Execute sqlite3 with db file
       finish      Finish current activity
       help        Help about any command
-      notify      Notify about current activity using notify-send
+      notify      Notify about today's activities using notify-send
       reject      Reject current activity
       select      Select new activity using rofi
       show        Show current activity

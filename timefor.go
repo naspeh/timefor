@@ -11,7 +11,9 @@ import (
 	"os/exec"
 	"os/user"
 	"path"
+	"strconv"
 	"strings"
+	"text/tabwriter"
 	"text/template"
 	"time"
 
@@ -148,22 +150,27 @@ func newCmd(db *sqlx.DB) *cobra.Command {
 
 	var notifyCmd = &cobra.Command{
 		Use:   "notify",
-		Short: "Notify about current activity using notify-send",
+		Short: "Notify about today's activities using notify-send",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			activity := Latest(db)
+			timeout, err := cmd.Flags().GetDuration("expire-time")
+			if err != nil {
+				return err
+			}
 			duration := activeDuration(db)
 			args = []string{
-				fmt.Sprintf("Current: %v", activity.Format(defaultTpl)),
+				"-t", strconv.FormatInt(timeout.Milliseconds(), 10),
 				fmt.Sprintf("Active for %v", formatDuration(duration)),
+				fmt.Sprintf(formatTodayActivities(db)),
 			}
-			err := exec.Command("notify-send", args...).Run()
+			err = exec.Command("notify-send", args...).Run()
 			if err != nil {
 				log.Printf("cannot send notification: %v", err)
 			}
 			return nil
 		},
 	}
+	notifyCmd.Flags().DurationP("expire-time", "t", 10*time.Second, "specifies the timeout at which to expire the notification")
 
 	var daemonCmd = &cobra.Command{
 		Use:   "daemon",
@@ -444,6 +451,40 @@ func activeDuration(db *sqlx.DB) time.Duration {
 		panic(err)
 	}
 	return duration
+}
+
+func formatTodayActivities(db *sqlx.DB) string {
+	rows, err := db.Queryx(`
+		SELECT name, sum(duration) duration
+		FROM log
+		WHERE strftime('%s', 'now') - started < 24 * 60 * 60
+		GROUP BY name;
+	`)
+	if err != nil {
+		panic(err)
+	}
+	defer rows.Close()
+
+	buf := bytes.Buffer{}
+	tabw := tabwriter.NewWriter(&buf, 0, 0, 1, ' ', tabwriter.Debug)
+	format := func(n string, d time.Duration) {
+		fmt.Fprintf(tabw, "%v\t %v\n", n, formatDuration(d))
+	}
+
+	duration := time.Duration(0)
+	cur := Activity{}
+	for rows.Next() {
+		err := rows.StructScan(&cur)
+		if err != nil {
+			panic(err)
+		}
+		duration += cur.Duration()
+		format(cur.Name, cur.Duration())
+	}
+	fmt.Fprintf(tabw, "\n")
+	format("TOTAL", duration)
+	tabw.Flush()
+	return buf.String()
 }
 
 func formatDuration(d time.Duration) string {

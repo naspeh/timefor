@@ -467,19 +467,27 @@ func activitiesToday(db *sqlx.DB) string {
 
 	duration := time.Duration(0)
 	a := Activity{}
+	count := 0
+	maxLength := 5 // length of "Total"
 	for rows.Next() {
 		err := rows.StructScan(&a)
 		if err != nil {
 			panic(err)
 		}
+		count += 1
 		duration += a.Duration()
 		fmt.Fprintf(tabw, lineTpl, a.Name, formatDuration(a.Duration()))
+		if len(a.Name) > maxLength {
+			maxLength = len(a.Name)
+		}
 	}
-	if duration == time.Duration(0) {
+	if count == 0 {
 		return ""
 	}
-	fmt.Fprintf(tabw, "\n")
-	fmt.Fprintf(tabw, lineTpl, "TOTAL", formatDuration(duration))
+	if count > 1 {
+		fmt.Fprintf(tabw, lineTpl, strings.Repeat("-", maxLength), "-----")
+		fmt.Fprintf(tabw, lineTpl, "Total", formatDuration(duration))
+	}
 	tabw.Flush()
 	return buf.String()
 }

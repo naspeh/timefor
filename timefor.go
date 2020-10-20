@@ -11,7 +11,6 @@ import (
 	"os/exec"
 	"os/user"
 	"path"
-	"strconv"
 	"strings"
 	"text/tabwriter"
 	"text/template"
@@ -27,8 +26,8 @@ const (
 	sleepTimeForDaemon  = 30 * time.Second
 	breakTimeForDaemon  = 80 * time.Minute
 	repeatTimeForDaemon = 10 * time.Minute
-	i3blocksTpl         = "{{.FormatDuration}} {{if .Active}}{{.Name}}\n\n#6666ee{{else}}OFF\n\n#666666{{end}}"
-	defaultTpl          = "{{.FormatDuration}} {{if .Active}}{{.Name}}{{else}}OFF{{end}}"
+	i3blocksTpl         = "{{.FormatTimeSince}} {{if .Active}}{{.Name}}\n\n#6666ee{{else}}OFF\n\n#666666{{end}}"
+	defaultTpl          = "{{.FormatTimeSince}} {{if .Active}}{{.Name}}{{else}}OFF{{end}}"
 )
 
 var dbFile string
@@ -153,24 +152,19 @@ func newCmd(db *sqlx.DB) *cobra.Command {
 		Short: "Notify about today's activities using notify-send",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			timeout, err := cmd.Flags().GetDuration("expire-time")
-			if err != nil {
-				return err
-			}
 			duration := activeDuration(db)
 			args = []string{
-				"-t", strconv.FormatInt(timeout.Milliseconds(), 10),
+				"-t", "0",
 				fmt.Sprintf("Active for %v", formatDuration(duration)),
-				fmt.Sprintf(formatTodayActivities(db)),
+				fmt.Sprintf(activitiesToday(db)),
 			}
-			err = exec.Command("notify-send", args...).Run()
+			err := exec.Command("notify-send", args...).Run()
 			if err != nil {
 				log.Printf("cannot send notification: %v", err)
 			}
 			return nil
 		},
 	}
-	notifyCmd.Flags().DurationP("expire-time", "t", 10*time.Second, "specifies the timeout at which to expire the notification")
 
 	var daemonCmd = &cobra.Command{
 		Use:   "daemon",
@@ -440,7 +434,9 @@ func activeDuration(db *sqlx.DB) time.Duration {
 		if err != nil {
 			panic(err)
 		}
-		if prev.ID != 0 && prev.Started().Sub(cur.Updated()) > timeForExpire {
+		if prev.ID == 0 && cur.Expired() {
+			break
+		} else if prev.Started().Sub(cur.Updated()) > timeForExpire {
 			break
 		}
 		duration += cur.Duration()
@@ -453,11 +449,11 @@ func activeDuration(db *sqlx.DB) time.Duration {
 	return duration
 }
 
-func formatTodayActivities(db *sqlx.DB) string {
+func activitiesToday(db *sqlx.DB) string {
 	rows, err := db.Queryx(`
-		SELECT name, sum(duration) duration
-		FROM log
-		WHERE strftime('%s', 'now') - started < 24 * 60 * 60
+		SELECT name, duration
+		FROM log_daily
+		WHERE date = date('now')
 		GROUP BY name;
 	`)
 	if err != nil {
@@ -467,22 +463,23 @@ func formatTodayActivities(db *sqlx.DB) string {
 
 	buf := bytes.Buffer{}
 	tabw := tabwriter.NewWriter(&buf, 0, 0, 1, ' ', tabwriter.Debug)
-	format := func(n string, d time.Duration) {
-		fmt.Fprintf(tabw, "%v\t %v\n", n, formatDuration(d))
-	}
+	lineTpl := "%v\t %v\n"
 
 	duration := time.Duration(0)
-	cur := Activity{}
+	a := Activity{}
 	for rows.Next() {
-		err := rows.StructScan(&cur)
+		err := rows.StructScan(&a)
 		if err != nil {
 			panic(err)
 		}
-		duration += cur.Duration()
-		format(cur.Name, cur.Duration())
+		duration += a.Duration()
+		fmt.Fprintf(tabw, lineTpl, a.Name, formatDuration(a.Duration()))
+	}
+	if duration == time.Duration(0) {
+		return ""
 	}
 	fmt.Fprintf(tabw, "\n")
-	format("TOTAL", duration)
+	fmt.Fprintf(tabw, lineTpl, "TOTAL", formatDuration(duration))
 	tabw.Flush()
 	return buf.String()
 }
@@ -563,14 +560,8 @@ func (a Activity) Duration() time.Duration {
 	return duration.Truncate(time.Second)
 }
 
-func (a Activity) FormatDuration() string {
-	var d time.Duration
-	if a.Active() {
-		d = a.Duration()
-	} else {
-		d = a.TimeSince()
-	}
-	return formatDuration(d)
+func (a Activity) FormatTimeSince() string {
+	return formatDuration(a.TimeSince())
 }
 
 func (a Activity) Updated() time.Time {

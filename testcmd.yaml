@@ -11,8 +11,8 @@
       db          Execute sqlite3 with db file
       finish      Finish current activity
       help        Help about any command
-      notify      Notify about today's activities using notify-send
       reject      Reject current activity
+      report      Report today's activities
       select      Select new activity using rofi
       show        Show current activity
       start       Start new activity
@@ -136,3 +136,13 @@
 - name: show-disabled--custom
   cmd: show -t "{{.Duration}} {{if .Active}}{{.Name}}{{else}}OFF{{end}}"
   output: "{{.Duration}} OFF"
+
+- name: report
+  cmd: report
+  output: |
+    Active for 00:00
+
+    @go    00:00
+    @test  00:00
+    -----  -----
+    Total  00:00

@@ -42,7 +42,21 @@ Daemon will send notification using `notify-send` after 80 minutes by default, w
 move away from my laptop in the near time.
 
 ## Reports
-There is no report command yet, but I can get reports from SQLite directly
+There is a `report` command, but it only displays today's activities like
+```sh
+timefor report
+# Active for 00:07
+#
+# @go    00:07
+# @test  00:05
+# -----  -----
+# Total  00:12
+
+# report can be shown using "notify-send", useful for key-binding
+timefor report --notify
+```
+
+Other reports I can get from SQLite directly
 ```sh
 # execute sqlite3 with db file
 timefor db

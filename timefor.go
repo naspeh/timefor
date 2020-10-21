@@ -147,24 +147,30 @@ func newCmd(db *sqlx.DB) *cobra.Command {
 	showCmd.Flags().Bool("i3blocks", false, "format for i3blocks")
 	showCmd.Flags().StringP("template", "t", defaultTpl, "template for formatting")
 
-	var notifyCmd = &cobra.Command{
-		Use:   "notify",
-		Short: "Notify about today's activities using notify-send",
+	var reportCmd = &cobra.Command{
+		Use:   "report",
+		Short: "Report today's activities",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			duration := activeDuration(db)
-			args = []string{
-				"-t", "0",
-				fmt.Sprintf("Active for %v", formatDuration(duration)),
-				fmt.Sprintf(activitiesToday(db)),
-			}
-			err := exec.Command("notify-send", args...).Run()
+			notify, err := cmd.Flags().GetBool("notify")
 			if err != nil {
-				log.Printf("cannot send notification: %v", err)
+				return err
 			}
+			title, desc := Report(db)
+			if notify {
+				args = []string{"-t", "0", title, desc}
+				err := exec.Command("notify-send", args...).Run()
+				if err != nil {
+					log.Printf("cannot send notification: %v", err)
+				}
+				return nil
+			}
+			fmt.Printf("%v\n\n", title)
+			fmt.Println(desc)
 			return nil
 		},
 	}
+	reportCmd.Flags().BoolP("notify", "n", false, "Notify using notify-send")
 
 	var daemonCmd = &cobra.Command{
 		Use:   "daemon",
@@ -224,7 +230,7 @@ func newCmd(db *sqlx.DB) *cobra.Command {
 		finishCmd,
 		rejectCmd,
 		showCmd,
-		notifyCmd,
+		reportCmd,
 		dbCmd,
 		daemonCmd,
 	)
@@ -381,9 +387,11 @@ func Update(db *sqlx.DB, name string, finish bool) error {
 // Reject rejects current activity (deletes it)
 func Reject(db *sqlx.DB) error {
 	activity := Latest(db)
-	_, err := db.Exec(`DELETE FROM log WHERE id = ?`, activity.ID)
-	if err != nil {
-		return err
+	if activity.Active() {
+		_, err := db.Exec(`DELETE FROM log WHERE id = ?`, activity.ID)
+		if err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -408,6 +416,8 @@ func Daemon(db *sqlx.DB, sleepTime time.Duration, breakTime time.Duration, repea
 			}
 			if duration.Seconds() > breakTime.Seconds()*1.2 {
 				args = append(args, "-u", "critical")
+			} else {
+				args = append(args, "-t", "3")
 			}
 			err := exec.Command("notify-send", args...).Run()
 			if err != nil {
@@ -449,7 +459,17 @@ func activeDuration(db *sqlx.DB) time.Duration {
 	return duration
 }
 
-func activitiesToday(db *sqlx.DB) string {
+// Report reports about today's activities for now
+// TODO: add custom time range support
+func Report(db *sqlx.DB) (title, desc string) {
+	duration := activeDuration(db)
+	if duration == time.Duration(0) {
+		latest := Latest(db)
+		title = fmt.Sprintf("Not active for %v ", latest.FormatTimeSince())
+	} else {
+		title = fmt.Sprintf("Active for %v", formatDuration(duration))
+	}
+
 	rows, err := db.Queryx(`
 		SELECT name, duration
 		FROM log_daily
@@ -462,10 +482,10 @@ func activitiesToday(db *sqlx.DB) string {
 	defer rows.Close()
 
 	buf := bytes.Buffer{}
-	tabw := tabwriter.NewWriter(&buf, 0, 0, 1, ' ', tabwriter.Debug)
+	tabw := tabwriter.NewWriter(&buf, 0, 0, 1, ' ', tabwriter.TabIndent)
 	lineTpl := "%v\t %v\n"
 
-	duration := time.Duration(0)
+	duration = time.Duration(0)
 	a := Activity{}
 	count := 0
 	maxLength := 5 // length of "Total"
@@ -482,14 +502,14 @@ func activitiesToday(db *sqlx.DB) string {
 		}
 	}
 	if count == 0 {
-		return ""
+		return title, ""
 	}
 	if count > 1 {
 		fmt.Fprintf(tabw, lineTpl, strings.Repeat("-", maxLength), "-----")
 		fmt.Fprintf(tabw, lineTpl, "Total", formatDuration(duration))
 	}
 	tabw.Flush()
-	return buf.String()
+	return title, buf.String()
 }
 
 func formatDuration(d time.Duration) string {

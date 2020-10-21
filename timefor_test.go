@@ -121,7 +121,7 @@ func TestCmd(t *testing.T) {
 				t.Fatal(err)
 			}
 			if diff := cmp.Diff(strings.TrimSpace(string(out)), strings.TrimSpace(buf.String())); diff != "" {
-				t.Logf("Got:\n %v", string(out))
+				t.Logf("Got:\n%v", string(out))
 				t.Errorf("expected different output: %v", diff)
 			}
 		})

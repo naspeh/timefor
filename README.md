@@ -19,19 +19,26 @@ I run in the background
 timefor daemon
 ```
 
-I have key-bindings for
+I have [key-bindings][dot-sxhkd] for
 ```sh
 # specify an activity name using rofi
 timefor select
 
-# finish the current activity
+# finish current activity
 timefor finish
 
-# reject the current activity
+# show today's report using notify-send
+timefor report --notify
+
+# reject current activity
 timefor reject
+
+# rename current activity
+timefor select --update
 ```
 
-I integrate it into my [status bar](https://github.com/vivien/i3blocks) using
+
+I integrate it into [my status bar][dot-i3blocks] using
 ```
 timefor show --i3blocks
 ```
@@ -40,6 +47,9 @@ I always see my current activity on the screen. If `timefor` activity is work-re
 
 Daemon will send notification using `notify-send` after 80 minutes by default, when I see such notification I plan to
 move away from my laptop in the near time.
+
+[dot-sxhkd]: https://github.com/naspeh/dotfiles/blob/66b4b4194e881748535929b98be37aa0e25b3265/x11/sxhkdrc#L48-L49
+[dot-i3blocks]: https://github.com/naspeh/dotfiles/blob/66b4b4194e881748535929b98be37aa0e25b3265/x11/i3/blocks.conf#L13-L16
 
 ## Reports
 There is a `report` command, but it only displays today's activities like
@@ -51,8 +61,10 @@ timefor report
 # @test  00:05
 # -----  -----
 # Total  00:12
+```
 
-# report can be shown using "notify-send", useful for key-binding
+Today's report can be shown using `notify-send`, useful for a key-binding
+```sh
 timefor report --notify
 ```
 
@@ -62,9 +74,9 @@ Other reports I can get from SQLite directly
 timefor db
 ```
 
-There is one main table `log` and few useful views.
+There is one main table `log` and a few useful views.
 
-I can use predefined views for simple queries in SQLite session
+I can use predefined SQLite views for simple queries
 ```sql
 -- today's activities grouped by name
 SELECT * FROM log_daily WHERE date = date('now');

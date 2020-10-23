@@ -417,7 +417,8 @@ func Daemon(db *sqlx.DB, sleepTime time.Duration, breakTime time.Duration, repea
 			if duration.Seconds() > breakTime.Seconds()*1.2 {
 				args = append(args, "-u", "critical")
 			} else {
-				args = append(args, "-t", "3")
+				// default timeout is too quick, so set it to 5s
+				args = append(args, "-t", "5000")
 			}
 			err := exec.Command("notify-send", args...).Run()
 			if err != nil {

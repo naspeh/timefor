@@ -114,7 +114,10 @@ func TestCmd(t *testing.T) {
 			} else if errors.As(err, &exiterr) && exiterr.ExitCode() != c.Code {
 				t.Errorf("expected code %v got %v", c.Code, exiterr.ExitCode())
 			}
-			latest := Latest(db)
+			latest, err := Latest(db)
+			if err != nil {
+				t.Fatal(err)
+			}
 			var buf bytes.Buffer
 			err = template.Must(template.New("tpl").Parse(c.Output)).Execute(&buf, latest)
 			if err != nil {

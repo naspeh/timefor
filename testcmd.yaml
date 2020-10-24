@@ -37,48 +37,42 @@
           --repeat-time duration   time to repeat a break reminder (default 10m0s)
           --sleep-time duration    sleep time in the loop (default 30s)
 
+- name: report--inactive
+  cmd: report
+  output: |
+    Inactive for 00:00
+
 - name: start-succeed
-  cmd: start --shift 10s @go
+  cmd: start --shift 10m @go
   output: New activity "@go" started
 
 - name: update-succeed
   cmd: update
+
+- name: report--one-activity
+  cmd: report
+  output: |
+    Active for 00:10
+
+    @go  00:10
 
 - name: start-failed--keep-existing
   cmd: start --shift 10s @go
   code: 1
   output: |
     Error: Keep tracking existing activity
-    Usage:
-      timefor start [activity name] [flags]
-
-    Flags:
-      -h, --help             help for start
-          --shift duration   start time shift (like 10m, 1m30s)
 
 - name: start-failed--started-must-be-latest
   cmd: start --shift 1m @test
   code: 1
   output: |
     Error: cannot insert new activity into database: started must be latest
-    Usage:
-      timefor start [activity name] [flags]
-
-    Flags:
-      -h, --help             help for start
-          --shift duration   start time shift (like 10m, 1m30s)
 
 - name: start-failed--negative-shift
   cmd: start --shift -1m @go
   code: 1
   output: |
     Error: shift cannot be negative
-    Usage:
-      timefor start [activity name] [flags]
-
-    Flags:
-      -h, --help             help for start
-          --shift duration   start time shift (like 10m, 1m30s)
 
 - name: start-succeed--second
   cmd: start @go
@@ -87,6 +81,12 @@
 - name: show-active--custom
   cmd: show -t "{{.Duration}} {{if .Active}}{{.Name}}{{else}}OFF{{end}}"
   output: "{{.Duration}} @go"
+
+- name: show-active--custom-bad-template
+  cmd: show -t "{{.BadField}} {{if .Active}}{{.Name}}{{else}}OFF{{end}}"
+  code: 1
+  output: |
+    Error: cannot format activity: template: tpl:1:2: executing "tpl" at <.BadField>: can't evaluate field BadField in type main.Activity
 
 - name: show-active
   cmd: show
@@ -118,12 +118,6 @@
   code: 1
   output: |
     Error: no current activity
-    Usage:
-      timefor update [flags]
-
-    Flags:
-      -h, --help          help for update
-          --name string   change the name as well
 
 - name: show-disabled
   cmd: show
@@ -137,12 +131,12 @@
   cmd: show -t "{{.Duration}} {{if .Active}}{{.Name}}{{else}}OFF{{end}}"
   output: "{{.Duration}} OFF"
 
-- name: report
+- name: report--two-activities
   cmd: report
   output: |
-    Active for 00:00
+    Active for 00:10
 
-    @go    00:00
+    @go    00:10
     @test  00:00
     -----  -----
-    Total  00:00
+    Total  00:10

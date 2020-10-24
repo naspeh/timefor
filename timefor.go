@@ -47,7 +47,10 @@ func main() {
 	}
 	defer db.Close()
 
-	initDb(db)
+	err = initDb(db)
+	if err != nil {
+		log.Fatalf("cannot initiate SQLite database: %v", err)
+	}
 
 	err = newCmd(db).Execute()
 	if err != nil {
@@ -82,7 +85,10 @@ func newCmd(db *sqlx.DB) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			name := Select(db)
+			name, err := Select(db)
+			if err != nil {
+				return err
+			}
 			if update {
 				return Update(db, name, false)
 			}
@@ -140,8 +146,7 @@ func newCmd(db *sqlx.DB) *cobra.Command {
 			if i3blocks {
 				tpl = i3blocksTpl
 			}
-			Show(db, tpl)
-			return nil
+			return Show(db, tpl)
 		},
 	}
 	showCmd.Flags().Bool("i3blocks", false, "format for i3blocks")
@@ -156,7 +161,10 @@ func newCmd(db *sqlx.DB) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			title, desc := Report(db)
+			title, desc, err := Report(db)
+			if err != nil {
+				return err
+			}
 			if notify {
 				args = []string{"-t", "0", title, desc}
 				err := exec.Command("notify-send", args...).Run()
@@ -219,8 +227,9 @@ func newCmd(db *sqlx.DB) *cobra.Command {
 	dbCmd.Flags().Bool("update-views", false, "update sqlite views and exit")
 
 	var rootCmd = &cobra.Command{
-		Use:   "timefor",
-		Short: "A command-line time tracker with rofi integration",
+		Use:          "timefor",
+		Short:        "A command-line time tracker with rofi integration",
+		SilenceUsage: true,
 	}
 
 	rootCmd.AddCommand(
@@ -237,13 +246,13 @@ func newCmd(db *sqlx.DB) *cobra.Command {
 	return rootCmd
 }
 
-func initDb(db *sqlx.DB) {
+func initDb(db *sqlx.DB) error {
 	var exists bool
 	err := db.QueryRow(`SELECT count(*) FROM sqlite_master WHERE type="table" AND name="log"`).Scan(&exists)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	} else if exists {
-		return
+		return nil
 	}
 	_, err = db.Exec(`
 		CREATE TABLE log(
@@ -262,12 +271,12 @@ func initDb(db *sqlx.DB) {
 		END;
 	`)
 	if err != nil {
-		log.Fatalf("cannot initiate SQLite database: %v", err)
+		return err
 	}
-	initDbViews(db)
+	return initDbViews(db)
 }
 
-func initDbViews(db *sqlx.DB) {
+func initDbViews(db *sqlx.DB) error {
 	_, err := db.Exec(`
 		DROP VIEW IF EXISTS latest;
 		CREATE VIEW latest AS
@@ -303,28 +312,35 @@ func initDbViews(db *sqlx.DB) {
 		DROP VIEW IF EXISTS current;
 	`)
 	if err != nil {
-		log.Fatalf("cannot initiate SQLite database: %v", err)
+		return err
 	}
+	return nil
 }
 
 // Latest returns the latest activity if exists
-func Latest(db *sqlx.DB) (activity Activity) {
-	err := db.Get(&activity, `SELECT * FROM latest`)
+func Latest(db *sqlx.DB) (activity Activity, err error) {
+	err = db.Get(&activity, `SELECT * FROM latest`)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		log.Fatalf("cannot get the latest activity: %v", err)
+		return Activity{}, fmt.Errorf("cannot get the latest activity: %v", err)
 	}
-	return activity
+	return activity, nil
 }
 
 // Start starts new activity
 func Start(db *sqlx.DB, name string, shift time.Duration) error {
 	name = strings.TrimSpace(name)
-	activity := Latest(db)
+	activity, err := Latest(db)
+	if err != nil {
+		return err
+	}
 	if activity.Active() && activity.Name == name {
 		return errors.New("Keep tracking existing activity")
 	}
-	UpdateIfExists(db, "", true)
-	_, err := db.NamedExec(`
+	_, err = UpdateIfExists(db, "", true)
+	if err != nil {
+		return err
+	}
+	_, err = db.NamedExec(`
 		INSERT INTO log (name, started, duration) VALUES (:name, strftime('%s', 'now') - :shiftSeconds, :shiftSeconds)
 	`, map[string]interface{}{
 		"name":         name,
@@ -338,15 +354,19 @@ func Start(db *sqlx.DB, name string, shift time.Duration) error {
 }
 
 // UpdateIfExists updates or finishes current activity if exists
-func UpdateIfExists(db *sqlx.DB, name string, finish bool) bool {
-	activity := Latest(db)
+func UpdateIfExists(db *sqlx.DB, name string, finish bool) (bool, error) {
+	activity, err := Latest(db)
+	if err != nil {
+		return false, err
+	}
 	if activity.Expired() {
-		_ = db.MustExec(`
-			UPDATE log SET current=NULL WHERE id = ?
-		`, activity.ID)
-		return false
+		_, err := db.Exec(`UPDATE log SET current=NULL WHERE id = ?`, activity.ID)
+		if err != nil {
+			return false, err
+		}
+		return false, nil
 	} else if !activity.Active() {
-		return false
+		return false, nil
 	}
 
 	name = strings.TrimSpace(name)
@@ -366,18 +386,21 @@ func UpdateIfExists(db *sqlx.DB, name string, finish bool) bool {
 		"id":               activity.ID,
 	})
 	if err != nil {
-		log.Fatalf("cannot update current activity: %v", err)
+		return false, err
 	}
 	rowCnt, err := res.RowsAffected()
 	if err != nil {
-		log.Fatalf("cannot update current activity: %v", err)
+		return false, err
 	}
-	return rowCnt != 0
+	return rowCnt != 0, nil
 }
 
 // Update updates or finishes current activity
 func Update(db *sqlx.DB, name string, finish bool) error {
-	updated := UpdateIfExists(db, name, finish)
+	updated, err := UpdateIfExists(db, name, finish)
+	if err != nil {
+		return err
+	}
 	if !updated {
 		return errors.New("no current activity")
 	}
@@ -386,7 +409,10 @@ func Update(db *sqlx.DB, name string, finish bool) error {
 
 // Reject rejects current activity (deletes it)
 func Reject(db *sqlx.DB) error {
-	activity := Latest(db)
+	activity, err := Latest(db)
+	if err != nil {
+		return err
+	}
 	if activity.Active() {
 		_, err := db.Exec(`DELETE FROM log WHERE id = ?`, activity.ID)
 		if err != nil {
@@ -397,18 +423,35 @@ func Reject(db *sqlx.DB) error {
 }
 
 // Show shows short information about current activity
-func Show(db *sqlx.DB, tpl string) {
-	activity := Latest(db)
-	fmt.Println(activity.Format(tpl))
+func Show(db *sqlx.DB, tpl string) error {
+	activity, err := Latest(db)
+	if err != nil {
+		return err
+	}
+	txt, err := activity.Format(tpl)
+	if err != nil {
+		return err
+	}
+	fmt.Println(txt)
+	return nil
 }
 
 // Daemon updates the duration of current activity then sleeps for a while
-func Daemon(db *sqlx.DB, sleepTime time.Duration, breakTime time.Duration, repeatTime time.Duration) {
+func Daemon(db *sqlx.DB, sleepTime time.Duration, breakTime time.Duration, repeatTime time.Duration) error {
 	var notified time.Time
 	for {
-		UpdateIfExists(db, "", false)
-		activity := Latest(db)
-		duration := activeDuration(db)
+		_, err := UpdateIfExists(db, "", false)
+		if err != nil {
+			return err
+		}
+		activity, err := Latest(db)
+		if err != nil {
+			return err
+		}
+		duration, err := activeDuration(db)
+		if err != nil {
+			return err
+		}
 		if activity.Active() && duration > breakTime && time.Since(notified) > repeatTime {
 			args := []string{
 				"Take a break!",
@@ -427,13 +470,14 @@ func Daemon(db *sqlx.DB, sleepTime time.Duration, breakTime time.Duration, repea
 			notified = time.Now()
 		}
 		time.Sleep(sleepTime)
+		return nil
 	}
 }
 
-func activeDuration(db *sqlx.DB) time.Duration {
+func activeDuration(db *sqlx.DB) (time.Duration, error) {
 	rows, err := db.Queryx(`SELECT * FROM log ORDER BY started DESC LIMIT 100`)
 	if err != nil {
-		panic(err)
+		return 0, err
 	}
 	defer rows.Close()
 
@@ -443,7 +487,7 @@ func activeDuration(db *sqlx.DB) time.Duration {
 	for rows.Next() {
 		err := rows.StructScan(&cur)
 		if err != nil {
-			panic(err)
+			return 0, err
 		}
 		if prev.ID == 0 && cur.Expired() {
 			break
@@ -455,18 +499,24 @@ func activeDuration(db *sqlx.DB) time.Duration {
 	}
 	err = rows.Err()
 	if err != nil {
-		panic(err)
+		return 0, err
 	}
-	return duration
+	return duration, nil
 }
 
 // Report reports about today's activities for now
 // TODO: add custom time range support
-func Report(db *sqlx.DB) (title, desc string) {
-	duration := activeDuration(db)
+func Report(db *sqlx.DB) (title, desc string, err error) {
+	duration, err := activeDuration(db)
+	if err != nil {
+		return "", "", err
+	}
 	if duration == time.Duration(0) {
-		latest := Latest(db)
-		title = fmt.Sprintf("Not active for %v ", latest.FormatTimeSince())
+		latest, err := Latest(db)
+		if err != nil {
+			return "", "", err
+		}
+		title = fmt.Sprintf("Inactive for %v ", latest.FormatTimeSince())
 	} else {
 		title = fmt.Sprintf("Active for %v", formatDuration(duration))
 	}
@@ -478,7 +528,7 @@ func Report(db *sqlx.DB) (title, desc string) {
 		GROUP BY name;
 	`)
 	if err != nil {
-		panic(err)
+		return "", "", err
 	}
 	defer rows.Close()
 
@@ -493,7 +543,7 @@ func Report(db *sqlx.DB) (title, desc string) {
 	for rows.Next() {
 		err := rows.StructScan(&a)
 		if err != nil {
-			panic(err)
+			return "", "", err
 		}
 		count += 1
 		duration += a.Duration()
@@ -503,14 +553,14 @@ func Report(db *sqlx.DB) (title, desc string) {
 		}
 	}
 	if count == 0 {
-		return title, ""
+		return title, "", nil
 	}
 	if count > 1 {
 		fmt.Fprintf(tabw, lineTpl, strings.Repeat("-", maxLength), "-----")
 		fmt.Fprintf(tabw, lineTpl, "Total", formatDuration(duration))
 	}
 	tabw.Flush()
-	return title, buf.String()
+	return title, buf.String(), nil
 }
 
 func formatDuration(d time.Duration) string {
@@ -522,26 +572,41 @@ func formatDuration(d time.Duration) string {
 }
 
 // Select selects new activity using rofi menu
-func Select(db *sqlx.DB) string {
+func Select(db *sqlx.DB) (string, error) {
 	var names []string
 	err := db.Select(&names, `SELECT DISTINCT name FROM log ORDER BY started DESC`)
 	if err != nil {
-		log.Fatalf("cannot get names from SQLite database: %v", err)
+		return "", err
 	}
 	cmd := exec.Command("rofi", "-dmenu")
-	cmdIn, _ := cmd.StdinPipe()
-	cmdOut, _ := cmd.StdoutPipe()
-	_ = cmd.Start()
+
+	cmdIn, err := cmd.StdinPipe()
+	if err != nil {
+		return "", err
+	}
+
+	cmdOut, err := cmd.StdoutPipe()
+	if err != nil {
+		return "", err
+	}
+
+	err = cmd.Start()
+	if err != nil {
+		return "", err
+	}
 	for _, name := range names {
 		fmt.Fprintln(cmdIn, name)
 	}
 	cmdIn.Close()
-	selectedName, _ := ioutil.ReadAll(cmdOut)
+	selectedName, err := ioutil.ReadAll(cmdOut)
+	if err != nil {
+		return "", err
+	}
 	err = cmd.Wait()
 	if err != nil {
-		log.Fatalf("cannot get selection from rofi: %v", err)
+		return "", fmt.Errorf("cannot get selection from rofi: %v", err)
 	}
-	return string(selectedName)
+	return string(selectedName), nil
 }
 
 // Activity represents a named activity
@@ -553,13 +618,17 @@ type Activity struct {
 	Current     sql.NullBool
 }
 
-func (a Activity) Format(tpl string) string {
+func (a Activity) Format(tpl string) (string, error) {
 	var buf bytes.Buffer
-	err := template.Must(template.New("tpl").Parse(tpl)).Execute(&buf, a)
+	t, err := template.New("tpl").Parse(tpl)
 	if err != nil {
-		log.Fatalf("cannot format activity: %v", err)
+		return "", fmt.Errorf("failed to parse template: %v", err)
 	}
-	return strings.TrimSpace(buf.String())
+	err = t.Execute(&buf, a)
+	if err != nil {
+		return "", fmt.Errorf("cannot format activity: %v", err)
+	}
+	return strings.TrimSpace(buf.String()), nil
 }
 
 func (a Activity) Started() time.Time {

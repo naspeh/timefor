@@ -470,7 +470,6 @@ func Daemon(db *sqlx.DB, sleepTime time.Duration, breakTime time.Duration, repea
 			notified = time.Now()
 		}
 		time.Sleep(sleepTime)
-		return nil
 	}
 }
 

@@ -90,25 +90,21 @@
 
 - name: show-active
   cmd: show
-  output: 00:00 @go
-
-- name: show-active--i3blocks
-  cmd: show --i3blocks
-  output: "00:00 @go\n\n#6666ee"
+  output: ☭ 00:00 @go
 
 - name: update-succeed--name-changed
   cmd: update --name @test
 
 - name: show-active--name-changed
   cmd: show
-  output: 00:00 @test
+  output: ☭ 00:00 @test
 
 - name: update-succeed--name-changed-with-trailing-space
   cmd: update --name '@test '
 
 - name: show-active--name-changed-with-trailing-space
-  cmd: show --i3blocks
-  output: "00:00 @test\n\n#6666ee"
+  cmd: show -t "{{.FormatLabel}}!"
+  output: "00:00 @test!"
 
 - name: finish
   cmd: finish
@@ -121,11 +117,7 @@
 
 - name: show-disabled
   cmd: show
-  output: 00:00 OFF
-
-- name: show-disabled--i3blocks
-  cmd: show --i3blocks
-  output: "00:00 OFF\n\n#666666"
+  output: ☯ 00:00 OFF
 
 - name: show-disabled--custom
   cmd: show -t "{{.Duration}} {{if .Active}}{{.Name}}{{else}}OFF{{end}}"

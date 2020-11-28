@@ -26,8 +26,7 @@ const (
 	sleepTimeForDaemon  = 30 * time.Second
 	breakTimeForDaemon  = 80 * time.Minute
 	repeatTimeForDaemon = 10 * time.Minute
-	i3blocksTpl         = "{{.FormatTimeSince}} {{if .Active}}{{.Name}}\n\n#6666ee{{else}}OFF\n\n#666666{{end}}"
-	defaultTpl          = "{{.FormatTimeSince}} {{if .Active}}{{.Name}}{{else}}OFF{{end}}"
+	defaultTpl          = "{{if .Active}}☭{{else}}☯{{end}} {{.FormatLabel}}"
 )
 
 var dbFile string
@@ -138,18 +137,9 @@ func newCmd(db *sqlx.DB) *cobra.Command {
 			if err != nil {
 				return err
 			}
-
-			i3blocks, err := cmd.Flags().GetBool("i3blocks")
-			if err != nil {
-				return err
-			}
-			if i3blocks {
-				tpl = i3blocksTpl
-			}
 			return Show(db, tpl)
 		},
 	}
-	showCmd.Flags().Bool("i3blocks", false, "format for i3blocks")
 	showCmd.Flags().StringP("template", "t", defaultTpl, "template for formatting")
 
 	var reportCmd = &cobra.Command{
@@ -659,6 +649,14 @@ func (a Activity) Duration() time.Duration {
 
 func (a Activity) FormatTimeSince() string {
 	return formatDuration(a.TimeSince())
+}
+
+func (a Activity) FormatLabel() string {
+	name := a.Name
+	if !a.Active() {
+		name = "OFF"
+	}
+	return fmt.Sprintf("%s %s", a.FormatTimeSince(), name)
 }
 
 func (a Activity) Updated() time.Time {

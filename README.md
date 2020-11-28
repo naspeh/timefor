@@ -40,7 +40,11 @@ timefor select --update
 
 I integrate it into [my status bar][dot-i3blocks] using
 ```
-timefor show --i3blocks
+[timefor]
+label= 
+command=timefor show -t '{"full_text":"{{.FormatLabel}}", "color":"{{if .Active}}#268bd2{{else}}#586e75{{end}}"}'
+format=json
+interval=1
 ```
 
 I always see my current activity on the screen. If `timefor` activity is work-related, then I should work. If I want to surf the internet for fun, then I should switch `timefor` activity to `@surf` or similar.
@@ -49,7 +53,7 @@ Daemon will send notification using `notify-send` after 80 minutes by default, w
 move away from my laptop in the near time.
 
 [dot-sxhkd]: https://github.com/naspeh/dotfiles/blob/66b4b4194e881748535929b98be37aa0e25b3265/x11/sxhkdrc#L48-L49
-[dot-i3blocks]: https://github.com/naspeh/dotfiles/blob/66b4b4194e881748535929b98be37aa0e25b3265/x11/i3/blocks.conf#L13-L16
+[dot-i3blocks]: https://github.com/naspeh/dotfiles/blob/2e29db172c13fededf94208656ae52c95849af39/x11/i3/blocks.conf#L13-L17
 
 ## Reports
 There is a `report` command, but it only displays today's activities like

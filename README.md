@@ -8,7 +8,7 @@ It's a simplified version of a similar GTK based tool [tider](https://github.com
 
 ## Installation
 ```
-go get github.com/naspeh/timefor
+go install github.com/naspeh/timefor@latest
 ```
 
 Or just download [the binary.](https://github.com/naspeh/timefor/raw/master/timefor)

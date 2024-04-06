@@ -34,8 +34,22 @@
     Flags:
           --break-time duration    time for a break reminder (default 1h20m0s)
       -h, --help                   help for daemon
+          --hook string            a hook command template
           --repeat-time duration   time to repeat a break reminder (default 10m0s)
           --sleep-time duration    sleep time in the loop (default 30s)
+
+- name: daemon--bad-hook-template
+  cmd: daemon --sleep-time 1s --hook 'echo "{{if}}"'
+  code: 1
+  output: |
+    Error: cannot render hook command: failed to parse template: template: tpl:1: missing value for if
+
+- name: daemon--err-in-hook-cmd
+  cmd: daemon --sleep-time 1s --hook 'exit 1'
+  code: 1
+  output: |
+    running hook command: exit 1
+    Error: cannot run hook command: exit status 1
 
 - name: report--inactive
   cmd: report

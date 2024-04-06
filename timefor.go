@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"log"
 	"os"
 	"os/exec"
@@ -186,13 +186,21 @@ func newCmd(db *sqlx.DB) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			Daemon(db, sleepTime, breakTime, repeatTime)
+			hook, err := cmd.Flags().GetString("hook")
+			if err != nil {
+				return err
+			}
+			err = Daemon(db, sleepTime, breakTime, repeatTime, hook)
+			if err != nil {
+				return err
+			}
 			return nil
 		},
 	}
 	daemonCmd.Flags().Duration("sleep-time", sleepTimeForDaemon, "sleep time in the loop")
 	daemonCmd.Flags().Duration("break-time", breakTimeForDaemon, "time for a break reminder")
 	daemonCmd.Flags().Duration("repeat-time", repeatTimeForDaemon, "time to repeat a break reminder")
+	daemonCmd.Flags().StringP("hook", "", "", "a hook command template")
 
 	var dbCmd = &cobra.Command{
 		Use:   "db",
@@ -427,8 +435,9 @@ func Show(db *sqlx.DB, tpl string) error {
 }
 
 // Daemon updates the duration of current activity then sleeps for a while
-func Daemon(db *sqlx.DB, sleepTime time.Duration, breakTime time.Duration, repeatTime time.Duration) error {
+func Daemon(db *sqlx.DB, sleepTime time.Duration, breakTime time.Duration, repeatTime time.Duration, hook string) error {
 	var notified time.Time
+	var lastHook string
 	for {
 		_, err := UpdateIfExists(db, "", false)
 		if err != nil {
@@ -455,9 +464,23 @@ func Daemon(db *sqlx.DB, sleepTime time.Duration, breakTime time.Duration, repea
 			}
 			err := exec.Command("notify-send", args...).Run()
 			if err != nil {
-				log.Printf("cannot send notification: %v", err)
+				fmt.Printf("cannot send notification: %v", err)
 			}
 			notified = time.Now()
+		}
+		if hook != "" {
+			cmd, err := activity.Format(hook)
+			if err != nil {
+				return fmt.Errorf("cannot render hook command: %v", err)
+			}
+			if lastHook != cmd {
+				lastHook = cmd
+				fmt.Printf("running hook command: %s\n", cmd)
+				err = exec.Command("sh", "-c", cmd).Run()
+				if err != nil {
+					return fmt.Errorf("cannot run hook command: %v", err)
+				}
+			}
 		}
 		time.Sleep(sleepTime)
 	}
@@ -587,7 +610,7 @@ func Select(db *sqlx.DB) (string, error) {
 		fmt.Fprintln(cmdIn, name)
 	}
 	cmdIn.Close()
-	selectedName, err := ioutil.ReadAll(cmdOut)
+	selectedName, err := io.ReadAll(cmdOut)
 	if err != nil {
 		return "", err
 	}

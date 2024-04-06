@@ -7,6 +7,7 @@
       timefor [command]
 
     Available Commands:
+      completion  Generate the autocompletion script for the specified shell
       daemon      Update the duration for current activity in a loop
       db          Execute sqlite3 with db file
       finish      Finish current activity

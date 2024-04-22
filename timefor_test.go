@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"strings"
@@ -77,7 +76,7 @@ func TestSchema(t *testing.T) {
 }
 
 func TestCmd(t *testing.T) {
-	file, err := ioutil.TempFile("", "logtest")
+	file, err := os.CreateTemp("", "logtest")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,7 +85,7 @@ func TestCmd(t *testing.T) {
 	db = sqlx.MustOpen("sqlite3", file.Name())
 	defer db.Close()
 
-	data, err := ioutil.ReadFile("testcmd.yaml")
+	data, err := os.ReadFile("testcmd.yaml")
 	if err != nil {
 		t.Fatal(err)
 	}

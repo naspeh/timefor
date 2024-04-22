@@ -22,11 +22,11 @@ import (
 )
 
 const (
-	timeForExpire       = 10 * time.Minute
-	sleepTimeForDaemon  = 30 * time.Second
-	breakTimeForDaemon  = 80 * time.Minute
-	repeatTimeForDaemon = 10 * time.Minute
-	defaultTpl          = "{{if .Active}}☭{{else}}☯{{end}} {{.FormatLabel}}"
+	intervalToExpire                     = 10 * time.Minute
+	defaultIntervalToUpdateDb            = 30 * time.Second
+	defaultIntervalToShowBreakReminder   = 80 * time.Minute
+	defaultIntervalToRepeatBreakReminder = 10 * time.Minute
+	defaultTpl                           = "{{if .Active}}☭{{else}}☯{{end}} {{.FormatLabel}}"
 )
 
 var dbFile string
@@ -172,17 +172,17 @@ func newCmd(db *sqlx.DB) *cobra.Command {
 
 	var daemonCmd = &cobra.Command{
 		Use:   "daemon",
-		Short: "Update the duration for current activity in a loop",
+		Short: "Update the duration for current activity and run hook if specified",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			sleepTime, err := cmd.Flags().GetDuration("sleep-time")
+			intervalToUpdateDb, err := cmd.Flags().GetDuration("update-interval")
 			if err != nil {
 				return err
 			}
-			breakTime, err := cmd.Flags().GetDuration("break-time")
+			intervalToShowBreakReminder, err := cmd.Flags().GetDuration("break-interval")
 			if err != nil {
 				return err
 			}
-			repeatTime, err := cmd.Flags().GetDuration("repeat-time")
+			intervalToRepeatBreakReminder, err := cmd.Flags().GetDuration("repeat-interval")
 			if err != nil {
 				return err
 			}
@@ -190,16 +190,16 @@ func newCmd(db *sqlx.DB) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			err = Daemon(db, sleepTime, breakTime, repeatTime, hook)
+			err = Daemon(db, intervalToUpdateDb, intervalToShowBreakReminder, intervalToRepeatBreakReminder, hook)
 			if err != nil {
 				return err
 			}
 			return nil
 		},
 	}
-	daemonCmd.Flags().Duration("sleep-time", sleepTimeForDaemon, "sleep time in the loop")
-	daemonCmd.Flags().Duration("break-time", breakTimeForDaemon, "time for a break reminder")
-	daemonCmd.Flags().Duration("repeat-time", repeatTimeForDaemon, "time to repeat a break reminder")
+	daemonCmd.Flags().Duration("update-interval", defaultIntervalToUpdateDb, "interval to update activity time in db")
+	daemonCmd.Flags().Duration("break-interval", defaultIntervalToShowBreakReminder, "interval to show a break reminder")
+	daemonCmd.Flags().Duration("repeat-interval", defaultIntervalToRepeatBreakReminder, "interval to repeat a break reminder")
 	daemonCmd.Flags().StringP("hook", "", "", "a hook command template")
 
 	var dbCmd = &cobra.Command{
@@ -434,39 +434,20 @@ func Show(db *sqlx.DB, tpl string) error {
 	return nil
 }
 
-// Daemon updates the duration of current activity then sleeps for a while
-func Daemon(db *sqlx.DB, sleepTime time.Duration, breakTime time.Duration, repeatTime time.Duration, hook string) error {
+// Daemon updates the duration of current activity and runs the hook if specified
+func Daemon(
+	db *sqlx.DB,
+	intervalToUpdateDb time.Duration,
+	intervalToShowBreakReminder time.Duration,
+	intervalToRepeatBreakReminder time.Duration,
+	hook string,
+) error {
 	var notified time.Time
 	var lastHook string
 	for {
-		_, err := UpdateIfExists(db, "", false)
-		if err != nil {
-			return err
-		}
 		activity, err := Latest(db)
 		if err != nil {
 			return err
-		}
-		duration, err := activeDuration(db)
-		if err != nil {
-			return err
-		}
-		if activity.Active() && duration > breakTime && time.Since(notified) > repeatTime {
-			args := []string{
-				"Take a break!",
-				fmt.Sprintf("Active for %v already", formatDuration(duration)),
-			}
-			if duration.Seconds() > breakTime.Seconds()*1.2 {
-				args = append(args, "-u", "critical")
-			} else {
-				// default timeout is too quick, so set it to 5s
-				args = append(args, "-t", "5000")
-			}
-			err := exec.Command("notify-send", args...).Run()
-			if err != nil {
-				fmt.Printf("cannot send notification: %v", err)
-			}
-			notified = time.Now()
 		}
 		if hook != "" {
 			cmd, err := activity.Format(hook)
@@ -482,7 +463,35 @@ func Daemon(db *sqlx.DB, sleepTime time.Duration, breakTime time.Duration, repea
 				}
 			}
 		}
-		time.Sleep(sleepTime)
+		if activity.Active() && time.Since(activity.Updated()) > intervalToUpdateDb {
+			fmt.Printf("updating time for %s\n", activity.Name)
+			_, err := UpdateIfExists(db, "", false)
+			if err != nil {
+				return err
+			}
+			duration, err := activeDuration(db)
+			if err != nil {
+				return err
+			}
+			if activity.Active() && duration > intervalToShowBreakReminder && time.Since(notified) > intervalToRepeatBreakReminder {
+				args := []string{
+					"Take a break!",
+					fmt.Sprintf("Active for %v already", formatDuration(duration)),
+				}
+				if duration.Seconds() > intervalToShowBreakReminder.Seconds()*1.2 {
+					args = append(args, "-u", "critical")
+				} else {
+					// default timeout is too quick, so set it to 5s
+					args = append(args, "-t", "5000")
+				}
+				err := exec.Command("notify-send", args...).Run()
+				if err != nil {
+					fmt.Printf("cannot send notification: %v", err)
+				}
+				notified = time.Now()
+			}
+		}
+		time.Sleep(1 * time.Second)
 	}
 }
 
@@ -503,7 +512,7 @@ func activeDuration(db *sqlx.DB) (time.Duration, error) {
 		}
 		if prev.ID == 0 && cur.Expired() {
 			break
-		} else if prev.Started().Sub(cur.Updated()) > timeForExpire {
+		} else if prev.Started().Sub(cur.Updated()) > intervalToExpire {
 			break
 		}
 		duration += cur.Duration()
@@ -690,7 +699,7 @@ func (a Activity) Updated() time.Time {
 }
 
 func (a Activity) Expired() bool {
-	return time.Since(a.Updated()) > timeForExpire
+	return time.Since(a.Updated()) > intervalToExpire
 }
 
 func (a Activity) Active() bool {

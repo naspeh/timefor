@@ -1,43 +1,42 @@
 - name: help
   cmd: -h
   output: |
-    A command-line time tracker with rofi integration
+    NAME:
+       timefor - A command-line time tracker with rofi integration
 
-    Usage:
-      timefor [command]
+    USAGE:
+       timefor [global options] command [command options] 
 
-    Available Commands:
-      completion  Generate the autocompletion script for the specified shell
-      daemon      Update the duration for current activity and run hook if specified
-      db          Execute sqlite3 with db file
-      finish      Finish current activity
-      help        Help about any command
-      reject      Reject current activity
-      report      Report today's activities
-      select      Select new activity using rofi
-      show        Show current activity
-      start       Start new activity
-      update      Update the duration of current activity (for cron use)
+    COMMANDS:
+       start    Start new activity
+       select   Select new activity using rofi
+       update   Update the duration of current activity (for cron use)
+       finish   Finish current activity
+       reject   Reject current activity
+       show     Show current activity
+       report   Report today's activities
+       daemon   Update the duration for current activity and run hook if specified
+       db       Execute sqlite3 with db file
+       help, h  Shows a list of commands or help for one command
 
-    Flags:
-      -h, --help   help for timefor
-
-    Use "timefor [command] --help" for more information about a command.
+    GLOBAL OPTIONS:
+       --help, -h  show help
 
 - name: daemon-help
   cmd: daemon -h
   output: |
-    Update the duration for current activity and run hook if specified
+    NAME:
+       timefor daemon - Update the duration for current activity and run hook if specified
 
-    Usage:
-      timefor daemon [flags]
+    USAGE:
+       timefor daemon [command options]  
 
-    Flags:
-          --break-interval duration    interval to show a break reminder (default 1h20m0s)
-      -h, --help                       help for daemon
-          --hook string                a hook command template
-          --repeat-interval duration   interval to repeat a break reminder (default 10m0s)
-          --update-interval duration   interval to update activity time in db (default 30s)
+    OPTIONS:
+       --update-interval value  interval to update activity time in db (default: 30s)
+       --break-interval value   interval to show a break reminder (default: 1h20m0s)
+       --repeat-interval value  interval to repeat a break reminder (default: 10m0s)
+       --hook value             a hook command template
+       --help, -h               show help
 
 - name: daemon--bad-hook-template
   cmd: daemon --hook 'echo "{{if}}"'
@@ -87,7 +86,7 @@
   cmd: start --shift -1m @go
   code: 1
   output: |
-    Error: shift cannot be negative
+    Error: a shift cannot be negative
 
 - name: start-succeed--second
   cmd: start @go

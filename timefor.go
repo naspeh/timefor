@@ -18,7 +18,7 @@ import (
 
 	"github.com/jmoiron/sqlx"
 	_ "github.com/mattn/go-sqlite3"
-	"github.com/spf13/cobra"
+	"github.com/urfave/cli/v2"
 )
 
 const (
@@ -51,197 +51,246 @@ func main() {
 		log.Fatalf("cannot initiate SQLite database: %v", err)
 	}
 
-	err = newCmd(db).Execute()
+	err = newCmd(db)
 	if err != nil {
+		fmt.Printf("Error: %v\n", err)
 		os.Exit(1)
 	}
 }
 
-func newCmd(db *sqlx.DB) *cobra.Command {
-	var startCmd = &cobra.Command{
-		Use:   "start [activity name]",
-		Short: "Start new activity",
-		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			shift, err := cmd.Flags().GetDuration("shift")
-			if err != nil {
-				return err
-			}
-			if shift < 0 {
-				return errors.New("shift cannot be negative")
-			}
-			return Start(db, args[0], shift)
+func newCmd(db *sqlx.DB) error {
+	app := &cli.App{
+		Name:  "timefor",
+		Usage: "A command-line time tracker with rofi integration",
+		Commands: []*cli.Command{
+			{
+				Name:      "start",
+				Usage:     "Start new activity",
+				ArgsUsage: "[activity name]",
+				Flags: []cli.Flag{
+					&cli.DurationFlag{
+						Name:  "shift",
+						Usage: "a shift for the start time (like 10m, 1m30s)",
+						Action: func(ctx *cli.Context, v time.Duration) error {
+							if v < 0 {
+								return errors.New("a shift cannot be negative")
+							}
+							return nil
+						},
+					},
+				},
+				Action: func(cCtx *cli.Context) error {
+					if cCtx.Args().Len() != 1 {
+						return cli.ShowSubcommandHelp(cCtx)
+					}
+
+					name := cCtx.Args().First()
+					shift := cCtx.Duration("shift")
+					return Start(db, name, shift)
+				},
+			},
+			{
+				Name:      "select",
+				Usage:     "Select new activity using rofi",
+				ArgsUsage: " ",
+				Flags: []cli.Flag{
+					&cli.BoolFlag{
+						Name:  "update",
+						Usage: "update current activity instead",
+						Value: false,
+					},
+				},
+				Action: func(cCtx *cli.Context) error {
+					if cCtx.Args().Present() {
+						return cli.ShowSubcommandHelp(cCtx)
+					}
+
+					update := cCtx.Bool("update")
+					name, err := Select(db)
+					if err != nil {
+						return err
+					}
+					if update {
+						return Update(db, name, false)
+					}
+					return Start(db, name, 0)
+
+				},
+			},
+			{
+				Name:      "update",
+				Usage:     "Update the duration of current activity (for cron use)",
+				ArgsUsage: " ",
+				Flags: []cli.Flag{
+					&cli.StringFlag{
+						Name:  "name",
+						Usage: "change the name as well",
+					},
+				},
+				Action: func(cCtx *cli.Context) error {
+					if cCtx.Args().Present() {
+						return cli.ShowSubcommandHelp(cCtx)
+					}
+
+					name := cCtx.String("name")
+					return Update(db, name, false)
+				},
+			},
+			{
+				Name:      "finish",
+				Usage:     "Finish current activity",
+				ArgsUsage: " ",
+				Action: func(cCtx *cli.Context) error {
+					if cCtx.Args().Present() {
+						return cli.ShowSubcommandHelp(cCtx)
+					}
+
+					return Update(db, "", true)
+				},
+			},
+			{
+				Name:      "reject",
+				Usage:     "Reject current activity",
+				ArgsUsage: " ",
+				Action: func(cCtx *cli.Context) error {
+					if cCtx.Args().Present() {
+						return cli.ShowSubcommandHelp(cCtx)
+					}
+
+					return Reject(db)
+				},
+			},
+			{
+				Name:      "show",
+				Usage:     "Show current activity",
+				ArgsUsage: " ",
+				Flags: []cli.Flag{
+					&cli.StringFlag{
+						Name:    "template",
+						Aliases: []string{"t"},
+						Usage:   "template for formatting",
+						Value:   defaultTpl,
+					},
+				},
+				Action: func(cCtx *cli.Context) error {
+					if cCtx.Args().Present() {
+						return cli.ShowSubcommandHelp(cCtx)
+					}
+
+					tpl := cCtx.String("template")
+					return Show(db, tpl)
+				},
+			},
+			{
+				Name:      "report",
+				Usage:     "Report today's activities",
+				ArgsUsage: " ",
+				Flags: []cli.Flag{
+					&cli.BoolFlag{
+						Name:    "notify",
+						Aliases: []string{"n"},
+						Usage:   "Notify using notify-send",
+						Value:   false,
+					},
+				},
+				Action: func(cCtx *cli.Context) error {
+					if cCtx.Args().Present() {
+						return cli.ShowSubcommandHelp(cCtx)
+					}
+					notify := cCtx.Bool("notify")
+					title, desc, err := Report(db)
+					if err != nil {
+						return err
+					}
+					if notify {
+						args := []string{"-t", "0", title, desc}
+						err := exec.Command("notify-send", args...).Run()
+						if err != nil {
+							log.Printf("cannot send notification: %v", err)
+						}
+						return nil
+					}
+					fmt.Printf("%v\n\n", title)
+					fmt.Println(desc)
+					return nil
+				},
+			},
+			{
+				Name:      "daemon",
+				Usage:     "Update the duration for current activity and run hook if specified",
+				ArgsUsage: " ",
+				Flags: []cli.Flag{
+					&cli.DurationFlag{
+						Name:  "update-interval",
+						Usage: "interval to update activity time in db",
+						Value: defaultIntervalToUpdateDb,
+					},
+					&cli.DurationFlag{
+						Name:  "break-interval",
+						Usage: "interval to show a break reminder",
+						Value: defaultIntervalToShowBreakReminder,
+					},
+					&cli.DurationFlag{
+						Name:  "repeat-interval",
+						Usage: "interval to repeat a break reminder",
+						Value: defaultIntervalToRepeatBreakReminder,
+					},
+					&cli.StringFlag{
+						Name:  "hook",
+						Usage: "a hook command template",
+					},
+				},
+				Action: func(cCtx *cli.Context) error {
+					if cCtx.Args().Present() {
+						return cli.ShowSubcommandHelp(cCtx)
+					}
+
+					intervalToUpdateDb := cCtx.Duration("update-interval")
+					intervalToShowBreakReminder := cCtx.Duration("break-interval")
+					intervalToRepeatBreakReminder := cCtx.Duration("repeat-interval")
+					hook := cCtx.String("hook")
+					err := Daemon(db, intervalToUpdateDb, intervalToShowBreakReminder, intervalToRepeatBreakReminder, hook)
+					if err != nil {
+						return err
+					}
+					return nil
+				},
+			},
+			{
+				Name:      "db",
+				Usage:     "Execute sqlite3 with db file",
+				ArgsUsage: " ",
+				Flags: []cli.Flag{
+					&cli.BoolFlag{
+						Name:  "update-views",
+						Usage: "update sqlite views and exit",
+						Value: false,
+					},
+				},
+				Action: func(cCtx *cli.Context) error {
+					if cCtx.Args().Present() {
+						return cli.ShowSubcommandHelp(cCtx)
+					}
+
+					dbviews := cCtx.Bool("update-views")
+					if dbviews {
+						initDbViews(db)
+						return nil
+					}
+					c := exec.Command("sqlite3", "-box", dbFile)
+					c.Stdin = os.Stdin
+					c.Stdout = os.Stdout
+					c.Stderr = os.Stderr
+					return c.Run()
+				},
+			},
 		},
 	}
-	startCmd.Flags().Duration("shift", 0, "start time shift (like 10m, 1m30s)")
 
-	var selectCmd = &cobra.Command{
-		Use:   "select",
-		Short: "Select new activity using rofi",
-		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			update, err := cmd.Flags().GetBool("update")
-			if err != nil {
-				return err
-			}
-			name, err := Select(db)
-			if err != nil {
-				return err
-			}
-			if update {
-				return Update(db, name, false)
-			}
-			return Start(db, name, 0)
-		},
+	if err := app.Run(os.Args); err != nil {
+		return err
 	}
-	selectCmd.Flags().Bool("update", false, "update current activity instead")
-
-	var updateCmd = &cobra.Command{
-		Use:   "update",
-		Short: "Update the duration of current activity (for cron use)",
-		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			name, err := cmd.Flags().GetString("name")
-			if err != nil {
-				return err
-			}
-			return Update(db, name, false)
-		},
-	}
-	updateCmd.Flags().String("name", "", "change the name as well")
-
-	var finishCmd = &cobra.Command{
-		Use:   "finish",
-		Short: "Finish current activity",
-		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return Update(db, "", true)
-		},
-	}
-
-	var rejectCmd = &cobra.Command{
-		Use:   "reject",
-		Short: "Reject current activity",
-		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return Reject(db)
-		},
-	}
-
-	var showCmd = &cobra.Command{
-		Use:   "show",
-		Short: "Show current activity",
-		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			tpl, err := cmd.Flags().GetString("template")
-			if err != nil {
-				return err
-			}
-			return Show(db, tpl)
-		},
-	}
-	showCmd.Flags().StringP("template", "t", defaultTpl, "template for formatting")
-
-	var reportCmd = &cobra.Command{
-		Use:   "report",
-		Short: "Report today's activities",
-		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			notify, err := cmd.Flags().GetBool("notify")
-			if err != nil {
-				return err
-			}
-			title, desc, err := Report(db)
-			if err != nil {
-				return err
-			}
-			if notify {
-				args = []string{"-t", "0", title, desc}
-				err := exec.Command("notify-send", args...).Run()
-				if err != nil {
-					log.Printf("cannot send notification: %v", err)
-				}
-				return nil
-			}
-			fmt.Printf("%v\n\n", title)
-			fmt.Println(desc)
-			return nil
-		},
-	}
-	reportCmd.Flags().BoolP("notify", "n", false, "Notify using notify-send")
-
-	var daemonCmd = &cobra.Command{
-		Use:   "daemon",
-		Short: "Update the duration for current activity and run hook if specified",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			intervalToUpdateDb, err := cmd.Flags().GetDuration("update-interval")
-			if err != nil {
-				return err
-			}
-			intervalToShowBreakReminder, err := cmd.Flags().GetDuration("break-interval")
-			if err != nil {
-				return err
-			}
-			intervalToRepeatBreakReminder, err := cmd.Flags().GetDuration("repeat-interval")
-			if err != nil {
-				return err
-			}
-			hook, err := cmd.Flags().GetString("hook")
-			if err != nil {
-				return err
-			}
-			err = Daemon(db, intervalToUpdateDb, intervalToShowBreakReminder, intervalToRepeatBreakReminder, hook)
-			if err != nil {
-				return err
-			}
-			return nil
-		},
-	}
-	daemonCmd.Flags().Duration("update-interval", defaultIntervalToUpdateDb, "interval to update activity time in db")
-	daemonCmd.Flags().Duration("break-interval", defaultIntervalToShowBreakReminder, "interval to show a break reminder")
-	daemonCmd.Flags().Duration("repeat-interval", defaultIntervalToRepeatBreakReminder, "interval to repeat a break reminder")
-	daemonCmd.Flags().StringP("hook", "", "", "a hook command template")
-
-	var dbCmd = &cobra.Command{
-		Use:   "db",
-		Short: "Execute sqlite3 with db file",
-		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			dbviews, err := cmd.Flags().GetBool("update-views")
-			if err != nil {
-				return err
-			}
-			if dbviews {
-				initDbViews(db)
-				return nil
-			}
-			c := exec.Command("sqlite3", "-box", dbFile)
-			c.Stdin = os.Stdin
-			c.Stdout = os.Stdout
-			c.Stderr = os.Stderr
-			return c.Run()
-		},
-	}
-	dbCmd.Flags().Bool("update-views", false, "update sqlite views and exit")
-
-	var rootCmd = &cobra.Command{
-		Use:          "timefor",
-		Short:        "A command-line time tracker with rofi integration",
-		SilenceUsage: true,
-	}
-
-	rootCmd.AddCommand(
-		startCmd,
-		selectCmd,
-		updateCmd,
-		finishCmd,
-		rejectCmd,
-		showCmd,
-		reportCmd,
-		dbCmd,
-		daemonCmd,
-	)
-	return rootCmd
+	return nil
 }
 
 func initDb(db *sqlx.DB) error {

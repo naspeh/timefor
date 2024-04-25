@@ -528,18 +528,21 @@ func Daemon(
 				}
 				err := exec.Command("notify-send", args...).Run()
 				if err != nil {
-					fmt.Printf("cannot send notification: %v", err)
+					fmt.Printf("cannot send notification: %v\n", err)
 				}
 				notified = time.Now()
 			}
 		}
 
 		nextUpdate := activity.TimeSince().Truncate(time.Minute) + time.Minute - activity.TimeSince()
-		log.Printf("next update in %s\n", nextUpdate)
+		fmt.Printf("next update in %s\n", nextUpdate)
 
 		select {
 		case c := <-change:
-			log.Println("change", c)
+			fmt.Println("change", c)
+			if c.Error != nil {
+				return c.Error
+			}
 
 		case <-time.After(nextUpdate):
 			if activity.Active() && time.Since(activity.Updated()) > time.Minute {
@@ -680,14 +683,6 @@ func Report(db *sqlx.DB) (title, desc string, err error) {
 	return title, buf.String(), nil
 }
 
-func formatDuration(d time.Duration) string {
-	d = d.Truncate(time.Minute)
-	h := d / time.Hour
-	d -= h * time.Hour
-	m := d / time.Minute
-	return fmt.Sprintf("%02d:%02d", h, m)
-}
-
 // Select selects new activity using rofi menu
 func Select(db *sqlx.DB) (string, error) {
 	var names []string
@@ -724,6 +719,14 @@ func Select(db *sqlx.DB) (string, error) {
 		return "", fmt.Errorf("cannot get selection from rofi: %v", err)
 	}
 	return string(selectedName), nil
+}
+
+func formatDuration(d time.Duration) string {
+	d = d.Truncate(time.Minute)
+	h := d / time.Hour
+	d -= h * time.Hour
+	m := d / time.Minute
+	return fmt.Sprintf("%02d:%02d", h, m)
 }
 
 // Activity represents a named activity

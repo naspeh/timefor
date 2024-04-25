@@ -32,7 +32,6 @@
        timefor daemon [command options]  
 
     OPTIONS:
-       --update-interval value  interval to update activity time in db (default: 30s)
        --break-interval value   interval to show a break reminder (default: 1h20m0s)
        --repeat-interval value  interval to repeat a break reminder (default: 10m0s)
        --hook value             a hook command template

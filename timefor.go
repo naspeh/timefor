@@ -24,7 +24,6 @@ import (
 
 const (
 	intervalToExpire                     = 10 * time.Minute
-	defaultIntervalToUpdateDb            = 30 * time.Second
 	defaultIntervalToShowBreakReminder   = 80 * time.Minute
 	defaultIntervalToRepeatBreakReminder = 10 * time.Minute
 	defaultTpl                           = "{{if .Active}}☭{{else}}☯{{end}} {{.FormatLabel}}"
@@ -222,11 +221,6 @@ func newCmd(db *sqlx.DB) error {
 				ArgsUsage: " ",
 				Flags: []cli.Flag{
 					&cli.DurationFlag{
-						Name:  "update-interval",
-						Usage: "interval to update activity time in db",
-						Value: defaultIntervalToUpdateDb,
-					},
-					&cli.DurationFlag{
 						Name:  "break-interval",
 						Usage: "interval to show a break reminder",
 						Value: defaultIntervalToShowBreakReminder,
@@ -246,12 +240,11 @@ func newCmd(db *sqlx.DB) error {
 						return cli.ShowSubcommandHelp(cCtx)
 					}
 
-					intervalToUpdateDb := cCtx.Duration("update-interval")
 					intervalToShowBreakReminder := cCtx.Duration("break-interval")
 					intervalToRepeatBreakReminder := cCtx.Duration("repeat-interval")
 					hook := cCtx.String("hook")
 
-					err := Daemon(db, intervalToUpdateDb, intervalToShowBreakReminder, intervalToRepeatBreakReminder, hook)
+					err := Daemon(db, intervalToShowBreakReminder, intervalToRepeatBreakReminder, hook)
 					if err != nil {
 						return err
 					}
@@ -488,7 +481,6 @@ func Show(db *sqlx.DB, tpl string) error {
 // Daemon updates the duration of current activity and runs the hook if specified
 func Daemon(
 	db *sqlx.DB,
-	intervalToUpdateDb time.Duration,
 	intervalToShowBreakReminder time.Duration,
 	intervalToRepeatBreakReminder time.Duration,
 	hook string,
@@ -550,7 +542,7 @@ func Daemon(
 			log.Println("change", c)
 
 		case <-time.After(nextUpdate):
-			if activity.Active() && time.Since(activity.Updated()) > intervalToUpdateDb {
+			if activity.Active() && time.Since(activity.Updated()) > time.Minute {
 				fmt.Printf("updating time for %s\n", activity.Name)
 				_, err := UpdateIfExists(db, "", false)
 				if err != nil {

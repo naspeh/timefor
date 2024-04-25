@@ -516,6 +516,7 @@ func Daemon(
 				return err
 			}
 			if duration > intervalToShowBreakReminder && time.Since(notified) > intervalToRepeatBreakReminder {
+				fmt.Printf("sending notification for %s\n", formatDuration(duration))
 				args := []string{
 					"Take a break!",
 					fmt.Sprintf("Active for %v already", formatDuration(duration)),

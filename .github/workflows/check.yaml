@@ -3,15 +3,11 @@ on: [push]
 jobs:
   lint:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        go-version: [ '1.20', '1.21.x', '1.22.x' ]
     steps:
       - uses: actions/checkout@v4
-      - name: Setup Go ${{ matrix.go-version }}
-        uses: actions/setup-go@v5
+      - uses: actions/setup-go@v5
         with:
-          go-version: ${{ matrix.go-version }}
+          go-version: 1.22.x
       - run: go version
 
       - name: gofmt
@@ -24,31 +20,14 @@ jobs:
             exit 1
           fi
 
-      # TODO: should be reproducible build
-      # - name: go build
-      #   run: |
-      #     set -e
-      #     sha1sum timefor
-      #     go get
-      #     go list -m all
-      #     go build
-      #     out=$(git status --porcelain)
-      #     if [ -n "$out" ]; then
-      #       echo 'Run "go build" and commit binary'
-      #       echo $out
-      #       sha1sum timefor
-      #       exit 1
-      #     fi
-
       - run: go vet
   test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Setup Go ${{ matrix.go-version }}
-        uses: actions/setup-go@v5
+      - uses: actions/setup-go@v5
         with:
-          go-version: ${{ matrix.go-version }}
+          go-version: 1.22.x
       - run: go version
 
       - name: test

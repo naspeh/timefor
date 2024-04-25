@@ -4,6 +4,7 @@ go 1.15
 
 require (
 	github.com/cpuguy83/go-md2man/v2 v2.0.3 // indirect
+	github.com/fsnotify/fsnotify v1.7.0
 	github.com/google/go-cmp v0.6.0
 	github.com/jmoiron/sqlx v1.3.5
 	github.com/kr/pretty v0.1.0 // indirect

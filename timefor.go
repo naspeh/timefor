@@ -16,6 +16,7 @@ import (
 	"text/template"
 	"time"
 
+	"github.com/fsnotify/fsnotify"
 	"github.com/jmoiron/sqlx"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/urfave/cli/v2"
@@ -249,6 +250,7 @@ func newCmd(db *sqlx.DB) error {
 					intervalToShowBreakReminder := cCtx.Duration("break-interval")
 					intervalToRepeatBreakReminder := cCtx.Duration("repeat-interval")
 					hook := cCtx.String("hook")
+
 					err := Daemon(db, intervalToUpdateDb, intervalToShowBreakReminder, intervalToRepeatBreakReminder, hook)
 					if err != nil {
 						return err
@@ -493,6 +495,10 @@ func Daemon(
 ) error {
 	var notified time.Time
 	var lastHook string
+	change := make(chan ChangeEvent)
+
+	go watchDbFile(change)
+
 	for {
 		activity, err := Latest(db)
 		if err != nil {
@@ -512,17 +518,12 @@ func Daemon(
 				}
 			}
 		}
-		if activity.Active() && time.Since(activity.Updated()) > intervalToUpdateDb {
-			fmt.Printf("updating time for %s\n", activity.Name)
-			_, err := UpdateIfExists(db, "", false)
-			if err != nil {
-				return err
-			}
+		if activity.Active() {
 			duration, err := activeDuration(db)
 			if err != nil {
 				return err
 			}
-			if activity.Active() && duration > intervalToShowBreakReminder && time.Since(notified) > intervalToRepeatBreakReminder {
+			if duration > intervalToShowBreakReminder && time.Since(notified) > intervalToRepeatBreakReminder {
 				args := []string{
 					"Take a break!",
 					fmt.Sprintf("Active for %v already", formatDuration(duration)),
@@ -540,8 +541,62 @@ func Daemon(
 				notified = time.Now()
 			}
 		}
-		time.Sleep(1 * time.Second)
+
+		nextUpdate := activity.TimeSince().Truncate(time.Minute) + time.Minute - activity.TimeSince()
+		log.Printf("next update in %s\n", nextUpdate)
+
+		select {
+		case c := <-change:
+			log.Println("change", c)
+
+		case <-time.After(nextUpdate):
+			if activity.Active() && time.Since(activity.Updated()) > intervalToUpdateDb {
+				fmt.Printf("updating time for %s\n", activity.Name)
+				_, err := UpdateIfExists(db, "", false)
+				if err != nil {
+					return err
+				}
+			}
+		}
 	}
+}
+
+type ChangeEvent struct {
+	Event fsnotify.Event
+	Error error
+}
+
+func watchDbFile(change chan ChangeEvent) error {
+	watcher, err := fsnotify.NewWatcher()
+	if err != nil {
+		return err
+	}
+	defer watcher.Close()
+
+	go func() {
+		for {
+			select {
+			case event, ok := <-watcher.Events:
+				if !ok {
+					return
+				}
+				change <- ChangeEvent{Event: event}
+
+			case err, ok := <-watcher.Errors:
+				if !ok {
+					return
+				}
+				change <- ChangeEvent{Error: err}
+			}
+		}
+	}()
+
+	if err := watcher.Add(dbFile); err != nil {
+		return err
+	}
+
+	<-make(chan struct{})
+	return nil
 }
 
 func activeDuration(db *sqlx.DB) (time.Duration, error) {
